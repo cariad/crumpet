@@ -1,12 +1,11 @@
 from contextlib import ExitStack
 from errno import ENOENT, ENOTDIR
 from os import PathLike, fspath, strerror
-from pathlib import Path
 from stat import S_ISDIR
 from threading import Thread
 from typing import Self
 
-from rootle import status
+from rootle import resolve, status
 
 from ._claim_port import claim_port
 from ._listener import Listener
@@ -96,8 +95,7 @@ class Server:
         if not 0 <= port <= 65535:
             raise ValueError(f"Port {port} must be 0-65535")
 
-        # Keep serving the same directory if the working directory changes.
-        absolute = Path(directory).absolute()
+        absolute = resolve(directory)
 
         with ExitStack() as stack:
             sockets = [stack.enter_context(sock) for sock in claim_port(port)]
