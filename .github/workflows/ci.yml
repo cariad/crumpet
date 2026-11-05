@@ -1,0 +1,81 @@
+name: ci
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions: {}
+
+env:
+  MISE_LOCKED: 1
+
+jobs:
+  lint:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install mise and the pinned tools
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          cache: false  # Restored tools aren't verified, so don't cache them
+          version: 2026.10.11
+
+      - name: Lint files against .editorconfig
+        run: mise run lint:editorconfig
+
+      - name: Lint Markdown files
+        run: mise run lint:markdown
+
+      - name: Lint Python files
+        run: mise run lint:python
+
+      - name: Lint TOML files
+        run: mise run lint:toml
+
+      - name: Check types
+        run: mise run lint:types
+
+      - name: Audit GitHub Actions files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: mise run lint:workflows
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        python:
+          - "3.14"
+          - "3.15"
+        runner:
+          - macos-latest
+          - ubuntu-latest
+          - windows-latest
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install mise and the pinned tools
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          cache: false  # Restored tools aren't verified, so don't cache them
+          version: 2026.10.11
+
+      - name: Run the tests
+        run: mise run test

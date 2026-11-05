@@ -1,0 +1,12 @@
+* text=auto eol=lf
+
+*.lock         text
+*.md           text diff=markdown
+*.py           text diff=python
+*.toml         text
+*.yml          text
+
+.editorconfig  text
+.gitattributes text
+.gitignore     text
+LICENSE        text

@@ -1,0 +1,9 @@
+toml-version = "v1.0.0"
+
+[format.rules]
+line-width = 80
+trailing-comment-alignment = true
+
+# Unpinned schemas drift, and pinning them isn't worth the upkeep.
+[schema]
+enabled = false

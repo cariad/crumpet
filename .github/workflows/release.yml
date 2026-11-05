@@ -1,0 +1,83 @@
+name: release
+
+on:
+  release:
+    types:
+      - published
+
+permissions: {}
+
+env:
+  MISE_LOCKED: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # Fetch main too, to check that the tag is its latest commit
+          persist-credentials: false
+
+      - name: Check that the tag is main's latest commit
+        run: |
+          if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+            echo "${GITHUB_REF_NAME} isn't the main branch's latest commit." >&2
+            exit 1
+          fi
+
+      - name: Install mise and the pinned tools
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          cache: false  # Restored tools aren't verified, so don't cache them
+          version: 2026.10.11
+
+      - name: Build the package, versioned by the tag
+        run: mise exec -- uv build
+
+      - name: Check that the version is the tag's
+        run: |
+          ls dist
+          test -f "dist/crumpet-${GITHUB_REF_NAME#v}.tar.gz"
+          test -f "dist/crumpet-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+
+      # Install the wheel we just built, not this checkout's source, into a throwaway
+      # environment, and check that the package imports.
+      - name: Check that the wheel installs and imports
+        run: |
+          mise exec -- uv run --isolated --no-project \
+            --with "dist/crumpet-${GITHUB_REF_NAME#v}-py3-none-any.whl" \
+            python -c "import crumpet"
+
+      - name: Upload the package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          if-no-files-found: error
+          name: dist
+          path: dist/
+
+  publish:
+    environment:
+      name: pypi
+      url: https://pypi.org/p/crumpet
+
+    needs: build
+
+    permissions:
+      id-token: write
+
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Download the package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish the package to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

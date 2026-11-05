@@ -1,0 +1,51 @@
+# Check for updates: mise self-update
+min_version = "2026.10.11"
+
+[settings]
+minimum_release_age = "7d"
+
+[tasks.lint]
+description = "Run the linters"
+depends = ["lint:*"]
+
+[tasks."lint:editorconfig"]
+description = "Lint files against .editorconfig"
+run = "editorconfig-checker"
+
+[tasks."lint:markdown"]
+description = "Lint Markdown files"
+run = "rumdl check --deny-config-warnings"
+
+[tasks."lint:python"]
+description = "Lint Python files"
+run = [
+  "uv run --locked --only-group lint ruff check",
+  "uv run --locked --only-group lint ruff format --check",
+]
+
+[tasks."lint:toml"]
+description = "Lint TOML files"
+run = [
+  "tombi lint --error-on-warnings .",
+  "tombi format --check --diff .",
+]
+
+[tasks."lint:types"]
+description = "Check types"
+run = "uv run --locked --no-default-groups --group lint pyright"
+
+[tasks."lint:workflows"]
+description = "Audit GitHub Actions files"
+run = "zizmor --strict-collection ."
+
+[tasks.test]
+description = "Run the tests"
+run = "uv run --locked --no-default-groups --group test pytest"
+
+# Check for updates: mise outdated --bump
+[tools]
+editorconfig-checker = "4.0.2"  # Lint files against .editorconfig
+rumdl = "0.2.77"                # Lint Markdown files
+tombi = "1.5.5"                 # Lint TOML files
+uv = "0.13.6"                   # Manage Python, the package and its tools
+zizmor = "1.31.1"               # Audit GitHub Actions files
