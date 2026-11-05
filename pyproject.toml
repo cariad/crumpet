@@ -1,0 +1,115 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = [
+  "hatch-vcs",
+  "hatchling",
+]
+
+[dependency-groups]
+dev = [
+  { include-group = "lint" },
+  { include-group = "test" },
+]
+lint = [
+  "pyright>=1.1.414",
+  "pytest>=9.1.1",
+  "ruff>=0.17.0",
+]
+test = [
+  "pytest>=9.1.1",
+  "pytest-cov>=7.1.0",
+]
+
+[project]
+authors = [
+  { name = "Cariad Eccleston", email = "cariad@cariad.earth" },
+]
+classifiers = [
+  "Development Status :: 1 - Planning",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Typing :: Typed",
+]
+dependencies = [
+  "rootle>=1.2.0,<2",
+]
+description = "Cosy local HTTP hosting"
+dynamic = [
+  "version",
+]
+license = "MIT"
+name = "crumpet"
+readme = "README.md"
+requires-python = ">=3.14"
+
+[project.urls]
+Issues = "https://github.com/cariad/crumpet/issues"
+Source = "https://github.com/cariad/crumpet"
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true
+
+[tool.coverage.run]
+branch = true
+source = ["crumpet"]
+
+[tool.hatch.version]
+fallback-version = "0.0.0"
+source = "vcs"
+
+[tool.pyright]
+include = [
+  "src",
+  "tests",
+]
+pythonVersion = "3.14"
+typeCheckingMode = "strict"
+
+[tool.pytest.ini_options]
+addopts = "--cov"
+testpaths = [
+  "tests",
+]
+
+[tool.ruff.format]
+line-ending = "lf"
+
+[tool.ruff.lint]
+ignore = [
+  "D100",   # Docstrings in public modules
+  "D104",   # Docstrings in public packages
+  "D107",   # Docstrings on __init__ methods, because classes document their arguments
+  "D205",   # One-line docstring summary followed by detail
+  "D212",   # Summary on the first line (we use D213 instead)
+]
+select = [
+  "ANN",    # Require all type annotations
+  "B",      # flake8-bugbear
+  "D",      # pydocstyle
+  "D213",   # Summary on the second line
+  "E",      # pycodestyle errors
+  "F",      # pyflakes
+  "G",      # flake8-logging-format
+  "I",      # isort
+  "LOG",    # flake8-logging
+  "RUF",    # ruff's own rules
+  "SIM",    # flake8-simplify
+  "UP",     # pyupgrade
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.uv]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { git = { commit = true, tags = true } },
+]
+exclude-newer = "7 days"
+exclude-newer-package = { rootle = false }
+required-version = ">=0.12.19"

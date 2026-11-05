@@ -1,0 +1,9 @@
+[line-length]
+line-length = 0  # No maximum line length
+
+[list-continuation-indent]
+style = "aligned"  # List content must align with parent item's text
+
+[no-trailing-spaces]
+br-spaces = 0  # Do not mark line breaks with trailing spaces
+strict = true  # Check code blocks too

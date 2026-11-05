@@ -1,0 +1,49 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.md]
+# We can't set an `indent_size` for Markdown documents because there isn't a
+# single size that suits all situations.
+#
+# For example, this document validly has two and three-space indenting:
+#
+# ```markdown
+# 1. This is quite a long ordered list item,
+#    so I wrap it with three spaces to keep
+#    it aligned.
+# 1. This is a shorter ordered list item.
+#    1. This is a sub list item, indented by
+#       three spaces to align it with its
+#       parent's content.
+#
+# - This is quite a long unordered list
+#   item, so I wrap it with two spaces to
+#   keep it aligned.
+# - This is a shorter unordered list item.
+#   - This is a sub list item, indented by
+#     two spaces to align it with its
+#     parent's content.
+# ```
+
+[*.py]
+# We can't set an `indent_size` for Python files either, because docstrings are
+# Markdown, and a wrapped list item is indented by two spaces:
+#
+# ```python
+# """
+# - This is quite a long unordered list
+#   item, so I wrap it with two spaces to
+#   keep it aligned.
+# """
+# ```
+#
+# `ruff format` enforces four-space indentation for the code itself.
+
+[*.yml]
+indent_size = 2
