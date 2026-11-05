@@ -267,7 +267,7 @@ def test_server_raises_for_non_directory(
 @mark.parametrize(
     "port",
     [
-        -1,
+        0,
         65536,
     ],
 )
@@ -276,7 +276,7 @@ def test_server_raises_for_port_out_of_range(
     tmp_path: Path,
 ) -> None:
     """
-    Assert that creating a server on a port that isn't 0-65535 raises
+    Assert that creating a server on a port that isn't 1-65535 raises
     `ValueError`.
     """
     with raises(ValueError) as ex:
@@ -286,7 +286,7 @@ def test_server_raises_for_port_out_of_range(
         )
 
     result = str(ex.value)
-    expect = f"Port {port} must be 0-65535"
+    expect = f"Port {port} must be 1-65535"
 
     assert result == expect
 

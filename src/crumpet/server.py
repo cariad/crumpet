@@ -26,7 +26,7 @@ class Server:
             - With `errno.EADDRINUSE` when the `port` is in use.
             - When the path to `directory` can't be followed.
             - When `port` can't be used for any other reason.
-        ValueError: When `port` isn't between 0 and 65535.
+        ValueError: When `port` isn't between 1 and 65535.
 
     Examples:
         ```python
@@ -92,8 +92,8 @@ class Server:
                 fspath(directory),
             )
 
-        if not 0 <= port <= 65535:
-            raise ValueError(f"Port {port} must be 0-65535")
+        if not 1 <= port <= 65535:
+            raise ValueError(f"Port {port} must be 1-65535")
 
         absolute = resolve(directory)
 
