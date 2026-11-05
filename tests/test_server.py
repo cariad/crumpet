@@ -1,6 +1,9 @@
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from errno import EADDRINUSE
+from functools import partial
+from http.client import HTTPConnection
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from socket import (
     AF_INET,
@@ -10,13 +13,51 @@ from socket import (
     SO_REUSEADDR,
     SOCK_STREAM,
     SOL_SOCKET,
+    create_connection,
     socket,
 )
+from threading import Thread
+from typing import NamedTuple
+from urllib.parse import urlsplit
 
-from pytest import MonkeyPatch, fixture, mark, param, raises
+from pytest import MonkeyPatch, mark, param, raises
 
 from crumpet import Server
 from tests.marks import needs_dual_stack, needs_ipv6
+
+
+class _Response(NamedTuple):
+    """A response, without its date."""
+
+    status: int
+    headers: list[tuple[str, str]]
+    body: bytes
+
+
+def _get(url: str) -> _Response:
+    """Get `url`, without following a redirect."""
+    parts = urlsplit(url)
+
+    with closing(
+        HTTPConnection(
+            parts.netloc,
+            timeout=5,
+        ),
+    ) as connection:
+        connection.request(
+            "GET",
+            parts.path,
+        )
+
+        response = connection.getresponse()
+
+        return _Response(
+            status=response.status,
+            headers=[
+                (name, value) for name, value in response.getheaders() if name != "Date"
+            ],
+            body=response.read(),
+        )
 
 
 @contextmanager
@@ -56,14 +97,60 @@ def _listen(
         yield sock.getsockname()[1]
 
 
-@fixture
-def free_port() -> int:
-    """A port that nothing listens on."""
-    with socket(AF_INET, SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        port: int = sock.getsockname()[1]
+@contextmanager
+def _serve_like_python(directory: Path) -> Generator[str]:
+    """Serve `directory` the way `python -m http.server` does, and yield its URL."""
+    with ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        partial(
+            SimpleHTTPRequestHandler,
+            directory=directory,
+        ),
+    ) as server:
+        thread = Thread(target=server.serve_forever)
+        thread.start()
 
-    return port
+        try:
+            yield f"http://127.0.0.1:{server.server_port}/"
+
+        finally:
+            server.shutdown()
+            thread.join()
+
+
+def test_server_frees_port_when_leaving(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that leaving a server's `with` block frees its port, so that another server
+    can start on it straight away, even with pages still connected to the first.
+    """
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
+        page = create_connection(
+            ("localhost", free_port),
+            timeout=5,
+        )
+
+        # Connections are accepted in order, so serving this one means that `page` was
+        # accepted too.
+        _get(server.url)
+
+    with (
+        page,
+        Server(
+            tmp_path,
+            port=free_port,
+        ) as server,
+    ):
+        result = _get(server.url).status
+
+    expect = 200
+
+    assert result == expect
 
 
 @mark.parametrize(
@@ -180,7 +267,7 @@ def test_server_raises_for_non_directory(
 @mark.parametrize(
     "port",
     [
-        -1,
+        0,
         65536,
     ],
 )
@@ -189,7 +276,7 @@ def test_server_raises_for_port_out_of_range(
     tmp_path: Path,
 ) -> None:
     """
-    Assert that creating a server on a port that isn't 0-65535 raises
+    Assert that creating a server on a port that isn't 1-65535 raises
     `ValueError`.
     """
     with raises(ValueError) as ex:
@@ -199,21 +286,112 @@ def test_server_raises_for_port_out_of_range(
         )
 
     result = str(ex.value)
-    expect = f"Port {port} must be 0-65535"
+    expect = f"Port {port} must be 1-65535"
 
     assert result == expect
 
 
-def test_server_raises_not_implemented(
+def test_server_raises_when_entered_again(
     free_port: int,
     tmp_path: Path,
 ) -> None:
+    """Assert that entering a server that's been left raises `RuntimeError`."""
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
+        pass
+
+    with (
+        raises(RuntimeError) as ex,
+        server,
+    ):
+        pass
+
+    result = str(ex.value)
+    expect = "A server can only be entered once"
+
+    assert result == expect
+
+
+@mark.parametrize(
+    "path",
+    [
+        # A directory without an index page is listed.
+        "",
+        "docs/",
+        # A directory named without a trailing slash is redirected.
+        "docs",
+        # A directory serves its index page.
+        "html/",
+        "htm/",
+        "notes.txt",
+        "missing.txt",
+        # Symlinks are followed wherever they lead.
+        "linked.txt",
+        "linked/",
+    ],
+)
+def test_server_serves_like_python(
+    free_port: int,
+    path: str,
+    served: Path,
+) -> None:
     """
-    Assert that creating a valid server raises `NotImplementedError`, because serving
-    isn't implemented yet.
+    Assert that a server serves files, index pages, listings, redirects and errors the
+    way Python's own server does.
     """
-    with raises(NotImplementedError):
+    with (
         Server(
-            tmp_path,
+            served,
             port=free_port,
-        )
+        ) as server,
+        _serve_like_python(served) as python_url,
+    ):
+        result = _get(server.url + path)
+        expect = _get(python_url + path)
+
+    assert result == expect
+
+
+@mark.parametrize(
+    "host",
+    [
+        "127.0.0.1",
+        param(
+            "[::1]",
+            marks=needs_ipv6,
+        ),
+    ],
+)
+def test_server_serves_wherever_localhost_leads(
+    free_port: int,
+    host: str,
+    tmp_path: Path,
+) -> None:
+    """Assert that a server serves at every address that `localhost` can mean."""
+    with Server(
+        tmp_path,
+        port=free_port,
+    ):
+        result = _get(f"http://{host}:{free_port}/").status
+
+    expect = 200
+
+    assert result == expect
+
+
+def test_server_url_names_port(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """Assert that a server's `url` names its port."""
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
+        result = server.url
+
+    expect = f"http://localhost:{free_port}/"
+
+    assert result == expect
