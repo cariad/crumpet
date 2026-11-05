@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pytest import MonkeyPatch, raises
+from pytest import MonkeyPatch, mark, raises
 
 from crumpet import Server
 
@@ -43,6 +43,33 @@ def test_server_raises_for_non_directory(
 
     result = ex.value.filename
     expect = "file.md"
+
+    assert result == expect
+
+
+@mark.parametrize(
+    "port",
+    [
+        -1,
+        65536,
+    ],
+)
+def test_server_raises_for_port_out_of_range(
+    port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that creating a server on a port that isn't 0-65535 raises
+    `ValueError`.
+    """
+    with raises(ValueError) as ex:
+        Server(
+            tmp_path,
+            port=port,
+        )
+
+    result = str(ex.value)
+    expect = f"Port {port} must be 0-65535"
 
     assert result == expect
 
