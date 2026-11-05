@@ -32,7 +32,11 @@ run = [
 
 [tasks."lint:types"]
 description = "Check types"
-run = "uv run --locked --no-default-groups --group lint pyright"
+run = [
+  "uv run --locked --no-default-groups --group lint pyright --pythonplatform Darwin",
+  "uv run --locked --no-default-groups --group lint pyright --pythonplatform Linux",
+  "uv run --locked --no-default-groups --group lint pyright --pythonplatform Windows",
+]
 
 [tasks."lint:workflows"]
 description = "Audit GitHub Actions files"

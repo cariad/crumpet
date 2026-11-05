@@ -3,6 +3,8 @@ from contextlib import ExitStack
 from socket import (
     AF_INET,
     AF_INET6,
+    IPPROTO_IPV6,
+    IPV6_V6ONLY,
     SO_REUSEADDR,
     SOCK_STREAM,
     SOL_SOCKET,
@@ -23,7 +25,7 @@ _LOOPBACKS = {
 _REUSE_ADDRESS = sys.platform != "win32"
 
 # The addresses that a program listens on to accept connections on every address,
-# loopback included.
+# loopback included, and whether the socket accepts IPv4 and IPv6 at once.
 #
 # macOS and Windows let a socket bind a loopback address while another program listens
 # on its wildcard, so they bind the wildcard first, to find that program. Both always
@@ -31,12 +33,16 @@ _REUSE_ADDRESS = sys.platform != "win32"
 #
 # Linux refuses that bind, and binding the wildcard there would also find programs that
 # listen only on other addresses, which `localhost` doesn't reach.
-_WILDCARDS: tuple[tuple[AddressFamily, str], ...] = (
+#
+# Windows lets a socket that accepts IPv4 and IPv6 at once share its port with sockets
+# that accept only one, so the IPv6 wildcard is bound both ways.
+_WILDCARDS: tuple[tuple[AddressFamily, str, bool], ...] = (
     ()
     if sys.platform == "linux"
     else (
-        (AF_INET, "0.0.0.0"),
-        (AF_INET6, "::"),
+        (AF_INET, "0.0.0.0", False),
+        (AF_INET6, "::", False),
+        (AF_INET6, "::", True),
     )
 )
 
@@ -45,6 +51,8 @@ def _bind(
     family: AddressFamily,
     host: str,
     port: int,
+    *,
+    dual_stack: bool = False,
 ) -> socket:
     """Bind a TCP socket to `host` and `port`."""
     sock = socket(family, SOCK_STREAM)
@@ -55,6 +63,13 @@ def _bind(
             SO_REUSEADDR,
             _REUSE_ADDRESS,
         )
+
+        if family == AF_INET6:
+            sock.setsockopt(
+                IPPROTO_IPV6,
+                IPV6_V6ONLY,
+                not dual_stack,
+            )
 
         sock.bind((host, port))
 
@@ -83,11 +98,12 @@ def claim_port(port: int) -> list[socket]:
     """
     families = (AF_INET, AF_INET6) if has_ipv6() else (AF_INET,)
 
-    for family, wildcard in _WILDCARDS:  # pragma: macos-and-windows-only
+    for family, wildcard, dual_stack in _WILDCARDS:  # pragma: macos-and-windows-only
         _bind(
             family,
             wildcard,
             port,
+            dual_stack=dual_stack,
         ).close()
 
     with ExitStack() as stack:
