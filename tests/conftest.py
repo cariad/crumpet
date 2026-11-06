@@ -1,7 +1,18 @@
+from collections.abc import Generator
 from pathlib import Path
 from socket import AF_INET, SOCK_STREAM, socket
 
 from pytest import fixture
+
+
+@fixture
+def busy_port() -> Generator[int]:
+    """A port that another program listens on at 127.0.0.1."""
+    with socket(AF_INET, SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen()
+
+        yield sock.getsockname()[1]
 
 
 @fixture

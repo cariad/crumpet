@@ -16,7 +16,6 @@ lint = [
   "ruff>=0.17.0",
 ]
 test = [
-  "coverage-conditional-plugin>=0.9.0",
   "pytest>=9.1.1",
   "pytest-cov>=7.1.0",
 ]
@@ -35,6 +34,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
+  "notwork>=1.1.0,<2",
   "rootle>=1.2.0,<2",
 ]
 description = "Cosy local HTTP hosting"
@@ -46,6 +46,9 @@ name = "crumpet"
 readme = "README.md"
 requires-python = ">=3.14"
 
+[project.scripts]
+crumpet = "crumpet._main:main"
+
 [project.urls]
 Issues = "https://github.com/cariad/crumpet/issues"
 Source = "https://github.com/cariad/crumpet"
@@ -55,14 +58,8 @@ fail_under = 100
 show_missing = true
 skip_covered = true
 
-[tool.coverage.coverage_conditional_plugin.rules]
-macos-and-windows-only = "sys_platform == 'linux'"
-
 [tool.coverage.run]
 branch = true
-plugins = [
-  "coverage_conditional_plugin",
-]
 source = ["crumpet"]
 
 [tool.hatch.version]
@@ -118,5 +115,5 @@ cache-keys = [
   { git = { commit = true, tags = true } },
 ]
 exclude-newer = "7 days"
-exclude-newer-package = { rootle = false }
+exclude-newer-package = { notwork = false, rootle = false }
 required-version = ">=0.12.19"
