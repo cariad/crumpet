@@ -5,9 +5,9 @@ from stat import S_ISDIR
 from threading import Thread
 from typing import Self
 
+from notwork import claim_port
 from rootle import resolve, status
 
-from ._claim_port import claim_port
 from ._listener import Listener
 
 
@@ -23,10 +23,11 @@ class Server:
         FileNotFoundError: When `directory` doesn't exist.
         NotADirectoryError: When `directory` isn't a directory.
         OSError:
-            - With `errno.EADDRINUSE` when the `port` is in use.
             - When the path to `directory` can't be followed.
-            - When `port` can't be used for any other reason.
-        ValueError: When `port` isn't between 1 and 65535.
+            - When `port` can't be claimed for any other reason.
+        PortInUseError: When `port` is in use.
+        PortOutOfRangeError: When `port` isn't in the valid range.
+        PortTypeError: When `port` isn't an `int`.
 
     Examples:
         ```python
@@ -40,10 +41,13 @@ class Server:
         Start serving.
 
         Raises:
-            RuntimeError: When the server has already been entered.
+            RuntimeError: When the server has already been entered or closed.
         """
         if self._served:
             raise RuntimeError("A server can only be entered once")
+
+        if self._closed:
+            raise RuntimeError("A closed server can't be entered")
 
         self._served = self._listeners
 
@@ -57,18 +61,7 @@ class Server:
 
     def __exit__(self, *_: object) -> None:
         """Stop serving, and free the port."""
-        with ExitStack() as stack:
-            for listener in self._listeners:
-                stack.callback(listener.server_close)
-
-            # Each takes up to half a second to stop, so stop them all at once.
-            stoppers = [Thread(target=listener.shutdown) for listener in self._served]
-
-            for stopper in stoppers:
-                stopper.start()
-
-            for stopper in stoppers:
-                stopper.join()
+        self.close()
 
     def __init__(
         self,
@@ -92,27 +85,49 @@ class Server:
                 fspath(directory),
             )
 
-        if not 1 <= port <= 65535:
-            raise ValueError(f"Port {port} must be 1-65535")
-
         absolute = resolve(directory)
 
+        claimed = claim_port(port)
+
         with ExitStack() as stack:
-            sockets = [stack.enter_context(sock) for sock in claim_port(port)]
+            stack.enter_context(claimed)
 
             self._listeners = [
                 Listener(
                     sock,
                     absolute,
                 )
-                for sock in sockets
+                for sock in claimed.sockets
             ]
 
-            # The listeners close the sockets now.
             stack.pop_all()
 
+        self._claimed = claimed
+        self._closed = False
         self._port = port
         self._served: list[Listener] = []
+
+    def close(self) -> None:
+        """Stop serving, and free the port."""
+        if self._closed:
+            return
+
+        self._closed = True
+
+        with ExitStack() as stack:
+            stack.callback(self._claimed.close)
+
+            for listener in self._listeners:
+                stack.callback(listener.server_close)
+
+            # Each takes up to half a second to stop, so stop them all at once.
+            stoppers = [Thread(target=listener.shutdown) for listener in self._served]
+
+            for stopper in stoppers:
+                stopper.start()
+
+            for stopper in stoppers:
+                stopper.join()
 
     @property
     def url(self) -> str:

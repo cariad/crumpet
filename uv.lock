@@ -7,6 +7,7 @@ exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for 
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
+notwork = false
 rootle = false
 
 [[package]]
@@ -96,28 +97,15 @@ wheels = [
 ]
 
 [[package]]
-name = "coverage-conditional-plugin"
-version = "0.9.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "coverage" },
-    { name = "packaging" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/2e/6e/82f411d325a38cc24289060ca5f80d990ee8d026f4de9782006acf061f9b/coverage_conditional_plugin-0.9.0.tar.gz", hash = "sha256:6893dab0542695dbd5ea714281dae0dfec8d0e36480ba32d839e9fa7344f8215", size = 10579, upload-time = "2023-06-02T10:25:10.166Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/06/83/df10dd1911cb1695274da836e786ade7eaace9ed625b14056eb0bd6117d8/coverage_conditional_plugin-0.9.0-py3-none-any.whl", hash = "sha256:1b37bc469019d2ab5b01f5eee453abe1846b3431e64e209720c2a9ec4afb8130", size = 7317, upload-time = "2023-06-02T10:25:08.177Z" },
-]
-
-[[package]]
 name = "crumpet"
 source = { editable = "." }
 dependencies = [
+    { name = "notwork" },
     { name = "rootle" },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "coverage-conditional-plugin" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -129,17 +117,18 @@ lint = [
     { name = "ruff" },
 ]
 test = [
-    { name = "coverage-conditional-plugin" },
     { name = "pytest" },
     { name = "pytest-cov" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "rootle", specifier = ">=1.2.0,<2" }]
+requires-dist = [
+    { name = "notwork", specifier = ">=1.1.0,<2" },
+    { name = "rootle", specifier = ">=1.2.0,<2" },
+]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "coverage-conditional-plugin", specifier = ">=0.9.0" },
     { name = "pyright", specifier = ">=1.1.414" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
@@ -151,7 +140,6 @@ lint = [
     { name = "ruff", specifier = ">=0.17.0" },
 ]
 test = [
-    { name = "coverage-conditional-plugin", specifier = ">=0.9.0" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
 ]
@@ -172,6 +160,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9a/8e/105de02c1322cfada6d9710d9146ef8026419d433c9d08359a2d35805811/nodeenv-1.11.0.tar.gz", hash = "sha256:3ce8fe5b71d16e8af7039ca65257354100bc772965d6bc549070649e53b1b146", size = 99301, upload-time = "2026-09-26T11:29:21.367Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/c8/12811c9b48fde162bb72b6f2e78fada9a247a09d7bb5be2050a5d099c77b/nodeenv-1.11.0-py2.py3-none-any.whl", hash = "sha256:edaa16e6c14d7cf395d75d4bbd5a26390f4dc06501a33b4e76282b02cc688a25", size = 34277, upload-time = "2026-09-26T11:29:19.933Z" },
+]
+
+[[package]]
+name = "notwork"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/32/9748969ad11f8fdfade11fe3862e579bb6be2f67116f25aa89593f4e46ac/notwork-1.1.0.tar.gz", hash = "sha256:41a763263a3403af432a70f6e23b007abfccaf0fde6aeea007f106b9dede32f1", size = 53071, upload-time = "2026-11-06T14:25:31.697Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2c/a5/3737c318edba816bbc5e1f4fe389495ad65735489489b96a0a7d19ebd77a/notwork-1.1.0-py3-none-any.whl", hash = "sha256:1ee0f2e9e52ac52f94651b8896369f965d8bef887dfab7214642861ea7d38716", size = 11386, upload-time = "2026-11-06T14:25:30.379Z" },
 ]
 
 [[package]]

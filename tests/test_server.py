@@ -1,6 +1,5 @@
 from collections.abc import Generator
 from contextlib import closing, contextmanager
-from errno import EADDRINUSE
 from functools import partial
 from http.client import HTTPConnection
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -20,6 +19,7 @@ from threading import Thread
 from typing import NamedTuple
 from urllib.parse import urlsplit
 
+from notwork import PortInUseError, PortOutOfRangeError
 from pytest import MonkeyPatch, mark, param, raises
 
 from crumpet import Server
@@ -118,6 +118,55 @@ def _serve_like_python(directory: Path) -> Generator[str]:
             thread.join()
 
 
+def test_server_frees_port_when_closed(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that closing a server that hasn't been entered frees its port, so that
+    another server can start on it straight away.
+    """
+    Server(
+        tmp_path,
+        port=free_port,
+    ).close()
+
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
+        result = _get(server.url).status
+
+    expect = 200
+
+    assert result == expect
+
+
+def test_server_frees_port_when_closed_while_entered(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that closing a server inside its `with` block frees its port, and that
+    leaving the block afterwards is safe.
+    """
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
+        server.close()
+
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
+        result = _get(server.url).status
+
+    expect = 200
+
+    assert result == expect
+
+
 def test_server_frees_port_when_leaving(
     free_port: int,
     tmp_path: Path,
@@ -199,25 +248,22 @@ def test_server_raises_for_busy_port(
     reuse_address: bool,
     tmp_path: Path,
 ) -> None:
-    """
-    Assert that creating a server on a busy port raises `OSError` with
-    `EADDRINUSE`.
-    """
+    """Assert that creating a server on a busy port raises `PortInUseError`."""
     with (
         _listen(
             host,
             dual_stack=dual_stack,
             reuse_address=reuse_address,
         ) as port,
-        raises(OSError) as ex,
+        raises(PortInUseError) as ex,
     ):
         Server(
             tmp_path,
             port=port,
         )
 
-    result = ex.value.errno
-    expect = EADDRINUSE
+    result = ex.value.port
+    expect = port
 
     assert result == expect
 
@@ -277,9 +323,9 @@ def test_server_raises_for_port_out_of_range(
 ) -> None:
     """
     Assert that creating a server on a port that isn't 1-65535 raises
-    `ValueError`.
+    `PortOutOfRangeError`.
     """
-    with raises(ValueError) as ex:
+    with raises(PortOutOfRangeError) as ex:
         Server(
             tmp_path,
             port=port,
@@ -287,6 +333,30 @@ def test_server_raises_for_port_out_of_range(
 
     result = str(ex.value)
     expect = f"Port {port} must be 1-65535"
+
+    assert result == expect
+
+
+def test_server_raises_when_entered_after_closing(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """Assert that entering a server that's been closed raises `RuntimeError`."""
+    server = Server(
+        tmp_path,
+        port=free_port,
+    )
+
+    server.close()
+
+    with (
+        raises(RuntimeError) as ex,
+        server,
+    ):
+        pass
+
+    result = str(ex.value)
+    expect = "A closed server can't be entered"
 
     assert result == expect
 
