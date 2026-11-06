@@ -11,6 +11,9 @@ site_description = "A cosy little Python package and command-line tool for servi
 site_name = "crumpet documentation"
 site_url = "https://cariad.github.io/crumpet/"
 strict = true
+watch = [
+  "README.md",
+]
 
 [[project.extra.social]]
 icon = "fontawesome/brands/github"
