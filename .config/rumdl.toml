@@ -7,3 +7,12 @@ style = "aligned"  # List content must align with parent item's text
 [no-trailing-spaces]
 br-spaces = 0  # Do not mark line breaks with trailing spaces
 strict = true  # Check code blocks too
+
+# These pages are generated.
+[per-file-ignores]
+"docs/api.md" = [
+  "MD041",
+]
+"docs/index.md" = [
+  "MD041",
+]

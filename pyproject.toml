@@ -7,8 +7,13 @@ requires = [
 
 [dependency-groups]
 dev = [
+  { include-group = "docs" },
   { include-group = "lint" },
   { include-group = "test" },
+]
+docs = [
+  "mkdocstrings-python>=2.0.10",
+  "zensical>=0.0.73",
 ]
 lint = [
   "pyright>=1.1.414",
@@ -37,7 +42,7 @@ dependencies = [
   "notwork>=1.1.0,<2",
   "rootle>=1.2.0,<2",
 ]
-description = "Cosy local HTTP hosting"
+description = "A cosy little Python package and command-line tool for serving a directory as a local website"
 dynamic = [
   "version",
 ]

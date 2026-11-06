@@ -4,6 +4,14 @@ min_version = "2026.10.11"
 [settings]
 minimum_release_age = "7d"
 
+[tasks."docs:build"]
+description = "Build the documentation site"
+run = "uv run --locked --only-group docs zensical build"
+
+[tasks."docs:serve"]
+description = "Serve the documentation site locally"
+run = "uv run --locked --only-group docs zensical serve"
+
 [tasks.lint]
 description = "Run the linters"
 depends = ["lint:*"]
