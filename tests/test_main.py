@@ -1,9 +1,11 @@
 import sys
 from pathlib import Path
 from runpy import run_module
+from urllib.request import urlopen
 
 from pytest import CaptureFixture, MonkeyPatch, mark, raises
 
+from crumpet import Server
 from crumpet._main import main
 from tests.marks import posix_only
 
@@ -184,30 +186,82 @@ def test_main_reports_port_usage_error(
     assert result == expect
 
 
-def test_main_reports_serving_not_implemented(
+def test_main_serves_until_ctrl_c(
     capsys: CaptureFixture[str],
     free_port: int,
+    monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Assert that serving is reported as not implemented once every check passes."""
+    """
+    Assert that the command serves its directory until Ctrl+C, then frees the port and
+    exits with 130, printing nothing more.
+    """
+    (tmp_path / "build").mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    printed: list[tuple[str, str]] = []
+    statuses: list[int] = []
+
+    def press_ctrl_c(_: float) -> None:
+        printed.append(capsys.readouterr())
+
+        with urlopen(
+            f"http://localhost:{free_port}/",
+            timeout=5,
+        ) as response:
+            statuses.append(response.status)
+
+        # Python's server logs the request.
+        capsys.readouterr()
+
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        "crumpet._main.sleep",
+        press_ctrl_c,
+    )
+
     exit_code = main(
         [
-            str(tmp_path),
+            "build",
             "--port",
             str(free_port),
         ],
     )
 
-    assert exit_code == 1
+    assert exit_code == 130
+
+    result = printed
+
+    expect = [
+        (
+            "",
+            f"crumpet: Serving 'build' at http://localhost:{free_port}/\n"
+            "crumpet: Press Ctrl+C to stop.\n",
+        ),
+    ]
+
+    assert result == expect
+
+    result = statuses
+    expect = [200]
+
+    assert result == expect
 
     result = capsys.readouterr()
 
     expect = (
         "",
-        "crumpet: error: Serving isn't implemented yet\n",
+        "",
     )
 
     assert result == expect
+
+    # Raises if the port is still claimed.
+    Server(
+        tmp_path,
+        port=free_port,
+    ).close()
 
 
 def test_python_m_crumpet_calls_itself_crumpet(

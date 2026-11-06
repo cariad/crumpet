@@ -1,6 +1,7 @@
 import sys
 from argparse import ArgumentParser
 from collections.abc import Sequence
+from time import sleep
 from typing import cast
 
 from notwork import PortInUseError, check_port_is_in_range
@@ -76,5 +77,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     except PortInUseError as ex:
         return _error(str(ex))
 
-    server.close()
-    return _error("Serving isn't implemented yet")
+    try:
+        with server:
+            print(
+                f"crumpet: Serving {args.directory!r} at {server.url}",
+                file=sys.stderr,
+            )
+
+            print(
+                "crumpet: Press Ctrl+C to stop.",
+                file=sys.stderr,
+            )
+
+            # Unlike waiting on a lock, `sleep` is interrupted by Ctrl+C on Windows too.
+            while True:
+                sleep(60)
+
+    except KeyboardInterrupt:
+        return 130
