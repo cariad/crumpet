@@ -211,6 +211,9 @@ def test_main_serves_until_ctrl_c(
         ) as response:
             statuses.append(response.status)
 
+            # Closing with the body unread can reset the connection mid-response.
+            response.read()
+
         # Python's server logs the request.
         capsys.readouterr()
 
