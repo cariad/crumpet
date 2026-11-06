@@ -42,6 +42,16 @@ mise run lint
 mise run test
 ```
 
+## Documentation
+
+The documentation site is built from `docs/` and the Python API's docstrings.
+
+To build and start the site locally:
+
+```bash
+mise run docs:serve
+```
+
 ## AI policy
 
 AI-assisted contributions are welcomed.

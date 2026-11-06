@@ -1,0 +1,59 @@
+[project]
+copyright = "&copy; 2026 Cariad Eccleston"
+nav = [
+  { "Get started" = "index.md" },
+  { "Python API" = "api.md" },
+]
+repo_name = "cariad/crumpet"
+repo_url = "https://github.com/cariad/crumpet"
+site_author = "Cariad Eccleston"
+site_description = "A cosy little Python package and command-line tool for serving a directory as a local website."
+site_name = "crumpet documentation"
+site_url = "https://cariad.github.io/crumpet/"
+strict = true
+watch = [
+  "README.md",
+]
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/cariad/"
+name = "Cariad Eccleston on GitHub"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/linkedin"
+link = "https://www.linkedin.com/in/cariad/"
+name = "Cariad Eccleston on LinkedIn"
+
+[project.plugins.include-markdown]
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = [
+  "src",
+]
+
+[[project.plugins.mkdocstrings.handlers.python.inventories]]
+url = "https://docs.python.org/3/objects.inv"
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+filters = ["!^_"]
+show_root_full_path = false
+show_root_heading = true
+show_source = true
+
+[project.theme]
+features = [
+  "content.code.copy",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"

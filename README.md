@@ -1,25 +1,74 @@
 # crumpet
 
-Cosy local HTTP hosting.
+Crumpet is a cosy little Python package and command-line tool for serving a directory as a local website.
 
-## Usage
+## Installation
 
-### Command line
+Crumpet requires Python 3.14 or later, and is tested on Linux, macOS, and Windows.
+
+Install `crumpet` via your favourite package manager:
+
+- ```bash
+  pip install crumpet
+  ```
+
+- ```bash
+  uv add crumpet
+  ```
+
+- ```bash
+  poetry add crumpet
+  ```
+
+Or run Crumpet without installing, using `pipx`:
+
+- ```bash
+  pipx run crumpet
+  ```
+
+## Running on the command line
 
 ```text
 crumpet [DIRECTORY] [--port PORT]
-python -m crumpet [DIRECTORY] [--port PORT]
 ```
 
-Serves `DIRECTORY` (default: the working directory) on `localhost` at `PORT` (default: 8000) until Ctrl+C.
+- `DIRECTORY` — the directory to serve. Defaults to the current working directory.
+- `PORT` — the port to serve on. Defaults to 8000.
 
-### Python
+So, for example, to serve the current directory at <http://localhost:8000>, just run:
 
-`Server` is a context manager that serves a directory on `localhost` for the duration of the `with` block:
+```bash
+crumpet
+```
+
+To serve the `public` subdirectory:
+
+```bash
+crumpet public
+```
+
+To serve the `public` subdirectory on port 8001:
+
+```bash
+crumpet public --port 8001
+```
+
+Press Ctrl+C to stop serving.
+
+## Usage as a library
+
+`Server` is a context manager that serves for the duration of the `with` block:
 
 ```python
 from crumpet import Server
 
-with Server("build", port=8000) as server:
-    print(server.url)  # http://localhost:8000/
+with Server("public", port=8001) as server:
+    print(server.url)  # http://localhost:8001/
 ```
+
+## Related packages
+
+Crumpet is built on these other packages that I wrote:
+
+- [`notwork`](https://github.com/cariad/notwork) — Python functions for when your network might notwork
+- [`rootle`](https://github.com/cariad/rootle) — Python functions to rootle around in your file system
