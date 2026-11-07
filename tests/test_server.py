@@ -440,6 +440,7 @@ def test_server_raises_for_port_out_of_range(
         "docs/../__crumpet__/notes.txt",
         "__CRUMPET__/notes.txt",
         "link/notes.txt",
+        "__crumpet__/link.txt",
     ],
 )
 def test_server_refuses_reserved_paths(
@@ -451,6 +452,8 @@ def test_server_refuses_reserved_paths(
     (tmp_path / "__crumpet__").mkdir()
     (tmp_path / "__crumpet__" / "notes.txt").write_text("Notes")
     (tmp_path / "link").symlink_to("__crumpet__")
+    (tmp_path / "notes.txt").write_text("Notes")
+    (tmp_path / "__crumpet__" / "link.txt").symlink_to("../notes.txt")
 
     with Server(
         tmp_path,

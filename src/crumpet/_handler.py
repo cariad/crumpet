@@ -152,11 +152,17 @@ class Handler(SimpleHTTPRequestHandler):
         """Whether the request's file is under the reserved directory."""
         # Compared as files, since paths can reach the same one by other case or links.
         reserved = Path(self.directory, _PREFIX.strip("/"))
-        path = Path(self.translate_path(self.path)).resolve()
+        path = Path(self.translate_path(self.path))
+
+        # Links can lead into the directory or out of it.
+        target = path.resolve()
 
         # A missing file can't be served anyway.
         with suppress(OSError):
-            return any(p.samefile(reserved) for p in (path, *path.parents))
+            return any(
+                p.samefile(reserved)
+                for p in (path, *path.parents, target, *target.parents)
+            )
 
         return False
 
