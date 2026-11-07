@@ -605,8 +605,10 @@ def test_server_serves_wherever_localhost_leads(
         param(
             "reload.js",
             b'if (typeof SharedWorker === "function") {\n'
-            b'  new SharedWorker("/__crumpet__/worker.js")'
-            b".port.onmessage = () => location.reload();\n"
+            b'  const port = new SharedWorker("/__crumpet__/worker.js").port;\n'
+            b"  port.onmessage = () => location.reload();\n"
+            b'  addEventListener("pagehide", () => port.postMessage(false));\n'
+            b'  addEventListener("pageshow", () => port.postMessage(true));\n'
             b"} else {\n"
             b'  new EventSource("/__crumpet__/events")'
             b".onmessage = () => location.reload();\n"
@@ -615,10 +617,17 @@ def test_server_serves_wherever_localhost_leads(
         ),
         param(
             "worker.js",
-            b"const ports = [];\n"
-            b"onconnect = (event) => ports.push(event.ports[0]);\n"
+            b"const ports = new Set();\n"
+            b"onconnect = (event) => {\n"
+            b"  const port = event.ports[0];\n"
+            b"  ports.add(port);\n"
+            b"  port.onmessage = (message) => {\n"
+            b"    if (message.data) ports.add(port);\n"
+            b"    else ports.delete(port);\n"
+            b"  };\n"
+            b"};\n"
             b'new EventSource("/__crumpet__/events").onmessage = () => {\n'
-            b"  for (const port of ports.splice(0)) port.postMessage(null);\n"
+            b"  for (const port of ports) port.postMessage(null);\n"
             b"};\n",
             id="worker",
         ),

@@ -28,18 +28,28 @@ _HEARTBEAT = 1
 _SCRIPTS = {
     _SCRIPT_PATH: (
         'if (typeof SharedWorker === "function") {\n'
-        f'  new SharedWorker("{_WORKER_PATH}")'
-        ".port.onmessage = () => location.reload();\n"
+        f'  const port = new SharedWorker("{_WORKER_PATH}").port;\n'
+        "  port.onmessage = () => location.reload();\n"
+        '  addEventListener("pagehide", () => port.postMessage(false));\n'
+        '  addEventListener("pageshow", () => port.postMessage(true));\n'
         "} else {\n"
         f'  new EventSource("{_EVENTS_PATH}").onmessage = () => location.reload();\n'
         "}\n"
     ),
-    # Every page reloads and connects again, so each reload forgets the old ones.
+    # Pages say whether they're open, since one can cancel its reload or come back
+    # from the back/forward cache.
     _WORKER_PATH: (
-        "const ports = [];\n"
-        "onconnect = (event) => ports.push(event.ports[0]);\n"
+        "const ports = new Set();\n"
+        "onconnect = (event) => {\n"
+        "  const port = event.ports[0];\n"
+        "  ports.add(port);\n"
+        "  port.onmessage = (message) => {\n"
+        "    if (message.data) ports.add(port);\n"
+        "    else ports.delete(port);\n"
+        "  };\n"
+        "};\n"
         f'new EventSource("{_EVENTS_PATH}").onmessage = () => {{\n'
-        "  for (const port of ports.splice(0)) port.postMessage(null);\n"
+        "  for (const port of ports) port.postMessage(null);\n"
         "};\n"
     ),
 }
