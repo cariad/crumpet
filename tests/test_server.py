@@ -1017,16 +1017,37 @@ def test_server_wait_returns_when_closed(
     tmp_path: Path,
     watch: bool,
 ) -> None:
-    """Assert that `wait()` returns once the server is closed."""
+    """
+    Assert that `wait()` blocks until the server is closed, and returns once its port
+    is free.
+    """
     with Server(
         tmp_path,
         port=free_port,
         watch=watch,
     ) as server:
+        waiter = Thread(target=server.wait)
+        waiter.start()
+        waiter.join(timeout=0.1)
+        waiting = waiter.is_alive()
+
         closer = Thread(target=server.close)
         closer.start()
-        server.wait()
+        waiter.join()
+
+        # Before `close()` returns.
+        with Server(
+            tmp_path,
+            port=free_port,
+        ) as again:
+            status = _get(again.url).status
+
         closer.join()
+
+    result = (waiting, status)
+    expect = (True, 200)
+
+    assert result == expect
 
 
 def test_server_url_names_port(
