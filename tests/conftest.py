@@ -1,8 +1,23 @@
 from collections.abc import Generator
+from contextlib import closing
 from pathlib import Path
 from socket import AF_INET, SOCK_STREAM, socket
+from threading import Event
 
+from playwright.sync_api import Page, sync_playwright
 from pytest import FixtureRequest, MonkeyPatch, fixture
+
+from crumpet._reloader import Reloader
+
+
+@fixture
+def browser_page() -> Generator[Page]:
+    """A page in headless Chromium."""
+    with (
+        sync_playwright() as playwright,
+        closing(playwright.chromium.launch(channel="chromium")) as browser,
+    ):
+        yield browser.new_page()
 
 
 @fixture
@@ -13,6 +28,28 @@ def busy_port() -> Generator[int]:
         sock.listen()
 
         yield sock.getsockname()[1]
+
+
+@fixture
+def events_opened(monkeypatch: MonkeyPatch) -> Event:
+    """Set once a page opens a server's event stream."""
+    opened = Event()
+    wait = Reloader.wait
+
+    def open_then_wait(
+        reloader: Reloader,
+        seen: int,
+        timeout: float,
+    ) -> int | None:
+        opened.set()
+        return wait(reloader, seen, timeout)
+
+    monkeypatch.setattr(
+        "crumpet._reloader.Reloader.wait",
+        open_then_wait,
+    )
+
+    return opened
 
 
 @fixture

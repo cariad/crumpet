@@ -6,6 +6,9 @@ requires = [
 ]
 
 [dependency-groups]
+browser = [
+  "playwright>=1.64.1",
+]
 dev = [
   { include-group = "docs" },
   { include-group = "lint" },
@@ -16,11 +19,13 @@ docs = [
   "zensical>=0.0.73",
 ]
 lint = [
+  { include-group = "browser" },
   "pyright>=1.1.414",
   "pytest>=9.1.1",
   "ruff>=0.17.0",
 ]
 test = [
+  { include-group = "browser" },
   "pytest>=9.1.1",
   "pytest-cov>=7.1.0",
   "pytest-rerunfailures>=16.7",

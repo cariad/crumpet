@@ -16,15 +16,16 @@ from socket import (
     create_connection,
     socket,
 )
-from threading import Thread
+from threading import Event, Thread
 from typing import NamedTuple
 
 from notwork import PortInUseError, PortOutOfRangeError
+from playwright.sync_api import Page
 from pytest import MonkeyPatch, mark, param, raises
 
 from crumpet import Server
 from tests.marks import needs_dual_stack, needs_ipv6
-from tests.pages import get, next_event, open_page, settle
+from tests.pages import get, next_event, open_page, reloads, settle
 
 # Sent with every response.
 _NO_STORE = ("Cache-Control", "no-store")
@@ -743,6 +744,34 @@ def test_server_reloads_once_per_replacement(
     ]
 
     assert result == expect
+
+
+def test_server_reloads_pages_with_strict_csp(
+    browser_page: Page,
+    events_opened: Event,
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that a page whose Content-Security-Policy allows only scripts from its own
+    origin reloads.
+    """
+    (tmp_path / "index.html").write_text(
+        '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'">',
+    )
+
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
+        browser_page.goto(server.url)
+        result = reloads(
+            browser_page,
+            server,
+            events_opened,
+        )
+
+    assert result
 
 
 def test_server_raises_when_entered_after_closing(
