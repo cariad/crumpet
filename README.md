@@ -64,6 +64,7 @@ from crumpet import Server
 
 with Server("public", port=8001) as server:
     print(server.url)  # http://localhost:8001/
+    server.reload()  # Reload every open HTML page
 ```
 
 ## Related packages

@@ -1,10 +1,13 @@
 from contextlib import suppress
 from functools import partial
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from socket import SHUT_RDWR, getfqdn, socket
 from typing import Any
 from weakref import WeakSet
+
+from ._handler import Handler
+from ._reloader import Reloader
 
 
 class Listener(ThreadingHTTPServer):
@@ -14,20 +17,23 @@ class Listener(ThreadingHTTPServer):
     Args:
         sock: Claimed socket to serve on.
         directory: Absolute path to the directory to serve.
+        reloader: Tells open pages when to reload.
     """
 
     def __init__(
         self,
         sock: socket,
         directory: Path,
+        reloader: Reloader,
     ) -> None:
         self.address_family = sock.family
 
         super().__init__(
             sock.getsockname(),
             partial(
-                SimpleHTTPRequestHandler,
+                Handler,
                 directory=directory,
+                reloader=reloader,
             ),
             bind_and_activate=False,
         )

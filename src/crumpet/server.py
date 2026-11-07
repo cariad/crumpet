@@ -9,6 +9,7 @@ from notwork import claim_port
 from rootle import resolve, status
 
 from ._listener import Listener
+from ._reloader import Reloader
 
 
 class Server:
@@ -33,6 +34,7 @@ class Server:
         ```python
         with Server("build", port=8000) as server:
             print(server.url)  # http://localhost:8000/
+            server.reload()    # Reload every open HTML page
         ```
     """
 
@@ -88,6 +90,7 @@ class Server:
         absolute = resolve(directory)
 
         claimed = claim_port(port)
+        reloader = Reloader()
 
         with ExitStack() as stack:
             stack.enter_context(claimed)
@@ -96,6 +99,7 @@ class Server:
                 Listener(
                     sock,
                     absolute,
+                    reloader,
                 )
                 for sock in claimed.sockets
             ]
@@ -105,6 +109,7 @@ class Server:
         self._claimed = claimed
         self._closed = False
         self._port = port
+        self._reloader = reloader
         self._served: list[Listener] = []
 
     def close(self) -> None:
@@ -116,6 +121,7 @@ class Server:
 
         with ExitStack() as stack:
             stack.callback(self._claimed.close)
+            stack.callback(self._reloader.close)
 
             for listener in self._listeners:
                 stack.callback(listener.server_close)
@@ -128,6 +134,10 @@ class Server:
 
             for stopper in stoppers:
                 stopper.join()
+
+    def reload(self) -> None:
+        """Reload every open HTML page."""
+        self._reloader.reload()
 
     @property
     def url(self) -> str:

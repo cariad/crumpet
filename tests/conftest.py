@@ -34,8 +34,6 @@ def served(tmp_path: Path) -> Path:
 
     - `notes.txt`
     - `docs/`, without an index page
-    - `html/index.html`
-    - `htm/index.htm`
     - `linked.txt`, a symlink to a file outside the directory
     - `linked/`, a symlink to a directory outside the directory
     """
@@ -50,10 +48,6 @@ def served(tmp_path: Path) -> Path:
     (directory / "notes.txt").write_text("Notes")
     (directory / "docs").mkdir()
     (directory / "docs" / "guide.txt").write_text("Guide")
-    (directory / "html").mkdir()
-    (directory / "html" / "index.html").write_text("<p>HTML</p>")
-    (directory / "htm").mkdir()
-    (directory / "htm" / "index.htm").write_text("<p>HTM</p>")
     (directory / "linked.txt").symlink_to(outside / "elsewhere.txt")
 
     (directory / "linked").symlink_to(

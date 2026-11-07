@@ -1,7 +1,7 @@
 from collections.abc import Generator
 from contextlib import closing, contextmanager
 from functools import partial
-from http.client import HTTPConnection
+from http.client import HTTPConnection, HTTPResponse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from socket import (
@@ -98,6 +98,25 @@ def _listen(
 
 
 @contextmanager
+def _open_page(url: str) -> Generator[HTTPResponse]:
+    """Connect to the server at `url` as an open page does, and yield its events."""
+    parts = urlsplit(url)
+
+    with closing(
+        HTTPConnection(
+            parts.netloc,
+            timeout=5,
+        ),
+    ) as connection:
+        connection.request(
+            "GET",
+            "/__crumpet__/events",
+        )
+
+        yield connection.getresponse()
+
+
+@contextmanager
 def _serve_like_python(directory: Path) -> Generator[str]:
     """Serve `directory` the way `python -m http.server` does, and yield its URL."""
     with ThreadingHTTPServer(
@@ -116,6 +135,82 @@ def _serve_like_python(directory: Path) -> Generator[str]:
         finally:
             server.shutdown()
             thread.join()
+
+
+@mark.parametrize(
+    (
+        "path",
+        "file",
+        "content",
+    ),
+    [
+        (
+            "",
+            "index.html",
+            "<!DOCTYPE html><html><head></head><body><p>Index</p></body></html>",
+        ),
+        (
+            "",
+            "index.htm",
+            "<p>Index without head or body</p>",
+        ),
+        (
+            "PAGE.HTML",
+            "PAGE.HTML",
+            "<HTML><HEAD></HEAD><BODY><P>Upper case</P></BODY></HTML>",
+        ),
+        (
+            "large.html",
+            "large.html",
+            "<p>Large</p>" * 100_000,
+        ),
+        # A directory without an index page is listed.
+        (
+            "",
+            "notes.txt",
+            "Notes",
+        ),
+    ],
+)
+def test_server_adds_reload_script_to_html(
+    content: str,
+    file: str,
+    free_port: int,
+    path: str,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that a server serves HTML files and listings like Python's own server does,
+    with the reload script appended, however the HTML is written.
+    """
+    (tmp_path / file).write_text(content)
+    script = b'<script src="/__crumpet__/reload.js"></script>'
+
+    with (
+        Server(
+            tmp_path,
+            port=free_port,
+        ) as server,
+        _serve_like_python(tmp_path) as python_url,
+    ):
+        result = _get(server.url + path)
+        python = _get(python_url + path)
+
+    length = str(len(python.body) + len(script))
+
+    expect = _Response(
+        status=python.status,
+        headers=[
+            (
+                name,
+                length if name == "Content-Length" else value,
+            )
+            for name, value in python.headers
+        ],
+        body=python.body + script,
+    )
+
+    assert result == expect
 
 
 def test_server_frees_port_when_closed(
@@ -337,6 +432,68 @@ def test_server_raises_for_port_out_of_range(
     assert result == expect
 
 
+@mark.parametrize(
+    "path",
+    [
+        "__crumpet__/notes.txt",
+        "%5f_crumpet__/notes.txt",
+        "docs/../__crumpet__/notes.txt",
+        "__CRUMPET__/notes.txt",
+        "link/notes.txt",
+        "__crumpet__/link.txt",
+    ],
+)
+def test_server_refuses_reserved_paths(
+    free_port: int,
+    path: str,
+    tmp_path: Path,
+) -> None:
+    """Assert that a file under the reserved prefix isn't served."""
+    (tmp_path / "__crumpet__").mkdir()
+    (tmp_path / "__crumpet__" / "notes.txt").write_text("Notes")
+    (tmp_path / "link").symlink_to("__crumpet__")
+    (tmp_path / "notes.txt").write_text("Notes")
+    (tmp_path / "__crumpet__" / "link.txt").symlink_to("../notes.txt")
+
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
+        result = _get(server.url + path).status
+
+    expect = 404
+
+    assert result == expect
+
+
+def test_server_reload_reloads_open_pages(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """Assert that `reload()` tells every open page to reload."""
+    with (
+        Server(
+            tmp_path,
+            port=free_port,
+        ) as server,
+        _open_page(server.url) as first,
+        _open_page(server.url) as second,
+    ):
+        server.reload()
+
+        result = [
+            first.readline(),
+            second.readline(),
+        ]
+
+    expect = [
+        b"data: reload\n",
+        b"data: reload\n",
+    ]
+
+    assert result == expect
+
+
 def test_server_raises_when_entered_after_closing(
     free_port: int,
     tmp_path: Path,
@@ -387,19 +544,13 @@ def test_server_raises_when_entered_again(
 @mark.parametrize(
     "path",
     [
-        # A directory without an index page is listed.
-        "",
-        "docs/",
         # A directory named without a trailing slash is redirected.
         "docs",
-        # A directory serves its index page.
-        "html/",
-        "htm/",
         "notes.txt",
         "missing.txt",
         # Symlinks are followed wherever they lead.
         "linked.txt",
-        "linked/",
+        "linked/elsewhere.txt",
     ],
 )
 def test_server_serves_like_python(
@@ -408,8 +559,8 @@ def test_server_serves_like_python(
     served: Path,
 ) -> None:
     """
-    Assert that a server serves files, index pages, listings, redirects and errors the
-    way Python's own server does.
+    Assert that a server serves files, redirects and errors the way Python's own server
+    does.
     """
     with (
         Server(
@@ -447,6 +598,68 @@ def test_server_serves_wherever_localhost_leads(
         result = _get(f"http://{host}:{free_port}/").status
 
     expect = 200
+
+    assert result == expect
+
+
+@mark.parametrize(
+    ("path", "body"),
+    [
+        param(
+            "reload.js",
+            b'if (typeof SharedWorker === "function") {\n'
+            b'  const port = new SharedWorker("/__crumpet__/worker.js").port;\n'
+            b"  port.onmessage = () => location.reload();\n"
+            b'  addEventListener("pagehide", () => port.postMessage(false));\n'
+            b'  addEventListener("pageshow", () => port.postMessage(true));\n'
+            b"} else {\n"
+            b'  new EventSource("/__crumpet__/events")'
+            b".onmessage = () => location.reload();\n"
+            b"}\n",
+            id="reload",
+        ),
+        param(
+            "worker.js",
+            b"const ports = new Set();\n"
+            b"onconnect = (event) => {\n"
+            b"  const port = event.ports[0];\n"
+            b"  ports.add(port);\n"
+            b"  port.onmessage = (message) => {\n"
+            b"    if (message.data) ports.add(port);\n"
+            b"    else ports.delete(port);\n"
+            b"  };\n"
+            b"};\n"
+            b'new EventSource("/__crumpet__/events").onmessage = () => {\n'
+            b"  for (const port of ports) port.postMessage(null);\n"
+            b"};\n",
+            id="worker",
+        ),
+    ],
+)
+def test_server_serves_reload_scripts(
+    body: bytes,
+    free_port: int,
+    path: str,
+    tmp_path: Path,
+) -> None:
+    """Assert that a server serves the scripts that reload HTML files."""
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
+        response = _get(server.url + "__crumpet__/" + path)
+
+    result = (
+        response.status,
+        dict(response.headers)["Content-type"],
+        response.body,
+    )
+
+    expect = (
+        200,
+        "text/javascript",
+        body,
+    )
 
     assert result == expect
 
