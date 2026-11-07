@@ -1,7 +1,6 @@
 from collections.abc import Callable, Generator
-from contextlib import closing, contextmanager
+from contextlib import contextmanager
 from functools import partial
-from http.client import HTTPConnection, HTTPResponse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from os import utime
 from pathlib import Path
@@ -18,13 +17,13 @@ from socket import (
 )
 from threading import Thread
 from typing import NamedTuple
-from urllib.parse import urlsplit
 
 from notwork import PortInUseError, PortOutOfRangeError
 from pytest import MonkeyPatch, mark, param, raises
 
 from crumpet import Server
 from tests.marks import needs_dual_stack, needs_ipv6
+from tests.pages import get, next_event, open_page, settle
 
 # Sent with every response.
 _NO_STORE = ("Cache-Control", "no-store")
@@ -40,21 +39,7 @@ class _Response(NamedTuple):
 
 def _get(url: str) -> _Response:
     """Get `url`, without following a redirect."""
-    parts = urlsplit(url)
-
-    with closing(
-        HTTPConnection(
-            parts.netloc,
-            timeout=5,
-        ),
-    ) as connection:
-        connection.request(
-            "GET",
-            parts.path,
-        )
-
-        response = connection.getresponse()
-
+    with get(url) as response:
         return _Response(
             status=response.status,
             headers=[
@@ -99,42 +84,6 @@ def _listen(
         sock.listen()
 
         yield sock.getsockname()[1]
-
-
-def _next_event(page: HTTPResponse) -> bytes:
-    """Read the next event or heartbeat that `page` is sent, without its blank line."""
-    line = page.readline()
-    page.readline()
-    return line
-
-
-@contextmanager
-def _open_page(url: str) -> Generator[HTTPResponse]:
-    """Connect to the server at `url` as an open page does, and yield its events."""
-    parts = urlsplit(url)
-
-    with closing(
-        HTTPConnection(
-            parts.netloc,
-            timeout=5,
-        ),
-    ) as connection:
-        connection.request(
-            "GET",
-            "/__crumpet__/events",
-        )
-
-        yield connection.getresponse()
-
-
-def _settle(page: HTTPResponse) -> None:
-    """
-    Wait for a heartbeat on `page`, so that changes made before watching started can't
-    be mistaken for later ones. macOS can report them once watching has started.
-    """
-    while (event := _next_event(page)) != b":\n":
-        if not event:
-            raise EOFError
 
 
 @contextmanager
@@ -245,10 +194,10 @@ def test_server_does_not_watch_by_default(
             tmp_path,
             port=free_port,
         ) as server,
-        _open_page(server.url) as page,
+        open_page(server.url) as page,
     ):
         (tmp_path / "notes.txt").write_text("Notes")
-        result = _next_event(page)
+        result = next_event(page)
 
     expect = b":\n"
 
@@ -563,12 +512,12 @@ def test_server_reload_reloads_open_pages(
             port=free_port,
             watch=watch,
         ) as server,
-        _open_page(server.url) as first,
-        _open_page(server.url) as second,
+        open_page(server.url) as first,
+        open_page(server.url) as second,
     ):
         if watch:
-            _settle(first)
-            _settle(second)
+            settle(first)
+            settle(second)
 
         server.reload()
 
@@ -658,16 +607,16 @@ def test_server_reloads_after_change(
             port=free_port,
             watch=True,
         ) as server,
-        _open_page(server.url) as first,
-        _open_page(server.url) as second,
+        open_page(server.url) as first,
+        open_page(server.url) as second,
     ):
-        _settle(first)
-        _settle(second)
+        settle(first)
+        settle(second)
         change(Path(path))
 
         result = [
-            _next_event(first),
-            _next_event(second),
+            next_event(first),
+            next_event(second),
         ]
 
     expect = [
@@ -689,17 +638,17 @@ def test_server_reloads_once_per_burst(
             port=free_port,
             watch=True,
         ) as server,
-        _open_page(server.url) as page,
+        open_page(server.url) as page,
     ):
-        _settle(page)
+        settle(page)
 
         for index in range(20):
             (tmp_path / f"{index}.html").write_text("Built")
 
         # A second reload would come before the next heartbeat.
         result = [
-            _next_event(page),
-            _next_event(page),
+            next_event(page),
+            next_event(page),
         ]
 
     expect = [

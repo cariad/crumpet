@@ -1,4 +1,5 @@
 import sys
+from collections.abc import Generator
 from pathlib import Path
 from runpy import run_module
 from urllib.request import urlopen
@@ -8,6 +9,7 @@ from pytest import CaptureFixture, MonkeyPatch, mark, raises
 from crumpet import Server
 from crumpet._main import main
 from tests.marks import posix_only
+from tests.pages import next_event, open_page, settle
 
 
 def test_main_prints_help(capsys: CaptureFixture[str]) -> None:
@@ -57,6 +59,43 @@ def test_main_raises_for_symlink_loop(tmp_path: Path) -> None:
 
     result = ex.value.filename
     expect = str(directory)
+
+    assert result == expect
+
+
+def test_main_reloads_after_change(
+    free_port: int,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Assert that the command reloads every open page after a change."""
+    events: list[bytes] = []
+
+    def change_then_press_ctrl_c(_: float) -> None:
+        with open_page(f"http://localhost:{free_port}/") as page:
+            settle(page)
+            (tmp_path / "index.html").write_text("Built")
+            events.append(next_event(page))
+
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        "crumpet._main.sleep",
+        change_then_press_ctrl_c,
+    )
+
+    exit_code = main(
+        [
+            str(tmp_path),
+            "--port",
+            str(free_port),
+        ],
+    )
+
+    assert exit_code == 130
+
+    result = events
+    expect = [b"data: reload\n"]
 
     assert result == expect
 
@@ -181,6 +220,45 @@ def test_main_reports_port_usage_error(
         "",
         "usage: crumpet [-h] [--port PORT] [DIRECTORY]\n"
         f"crumpet: error: argument --port: {message}\n",
+    )
+
+    assert result == expect
+
+
+def test_main_reports_watch_failure(
+    capsys: CaptureFixture[str],
+    free_port: int,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Assert that a directory that can't be watched is reported as it was given."""
+    (tmp_path / "build").mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    def run_out_of_watches(*_: object, **__: object) -> Generator[set[object]]:
+        raise OSError("OS file watch limit reached")
+        yield set()
+
+    monkeypatch.setattr(
+        "crumpet.server.watchfiles.watch",
+        run_out_of_watches,
+    )
+
+    exit_code = main(
+        [
+            "build",
+            "--port",
+            str(free_port),
+        ],
+    )
+
+    assert exit_code == 1
+
+    result = capsys.readouterr()
+
+    expect = (
+        "",
+        "crumpet: error: Can't watch 'build': OS file watch limit reached\n",
     )
 
     assert result == expect

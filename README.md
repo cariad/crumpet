@@ -53,7 +53,7 @@ To serve the `public` subdirectory on port 8001:
 crumpet public --port 8001
 ```
 
-Press Ctrl+C to stop serving.
+Crumpet reloads every open HTML page whenever anything in the directory changes. Press Ctrl+C to stop serving.
 
 ## Usage as a library
 
