@@ -11,6 +11,13 @@ needs_dual_stack = mark.skipif(
 """Decorator for tests that need a socket that accepts IPv4 and IPv6 at once."""
 
 
+linux_only = mark.skipif(
+    sys.platform != "linux",
+    reason="Linux-only behaviour",
+)
+"""Decorator for tests that must run on Linux only."""
+
+
 needs_ipv6 = mark.skipif(
     not has_ipv6(),
     reason="No IPv6",
