@@ -1016,6 +1016,7 @@ def test_server_serves_wherever_localhost_leads(
         param(
             "worker.js",
             b"const ports = new Set();\n"
+            b"let events = null;\n"
             b"onconnect = (event) => {\n"
             b"  const port = event.ports[0];\n"
             b"  ports.add(port);\n"
@@ -1023,9 +1024,11 @@ def test_server_serves_wherever_localhost_leads(
             b"    if (message.data) ports.add(port);\n"
             b"    else ports.delete(port);\n"
             b"  };\n"
-            b"};\n"
-            b'new EventSource("/__crumpet__/events").onmessage = () => {\n'
-            b"  for (const port of ports) port.postMessage(null);\n"
+            b"  if (events) return;\n"
+            b'  events = new EventSource("/__crumpet__/events");\n'
+            b"  events.onmessage = () => {\n"
+            b"    for (const port of ports) port.postMessage(null);\n"
+            b"  };\n"
             b"};\n",
             id="worker",
         ),

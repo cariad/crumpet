@@ -42,8 +42,11 @@ _SCRIPTS = {
     ),
     # Pages say whether they're open, since one can cancel its reload or come back
     # from the back/forward cache.
+    #
+    # The stream opens once a page connects, so no reload arrives with no page to tell.
     _WORKER_PATH: (
         "const ports = new Set();\n"
+        "let events = null;\n"
         "onconnect = (event) => {\n"
         "  const port = event.ports[0];\n"
         "  ports.add(port);\n"
@@ -51,9 +54,11 @@ _SCRIPTS = {
         "    if (message.data) ports.add(port);\n"
         "    else ports.delete(port);\n"
         "  };\n"
-        "};\n"
-        f'new EventSource("{_EVENTS_PATH}").onmessage = () => {{\n'
-        "  for (const port of ports) port.postMessage(null);\n"
+        "  if (events) return;\n"
+        f'  events = new EventSource("{_EVENTS_PATH}");\n'
+        "  events.onmessage = () => {\n"
+        "    for (const port of ports) port.postMessage(null);\n"
+        "  };\n"
         "};\n"
     ),
 }
