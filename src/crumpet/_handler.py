@@ -1,4 +1,5 @@
 from contextlib import suppress
+from html import escape
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler
 from io import BytesIO
@@ -26,14 +27,17 @@ _HEARTBEAT = 1
 # Pages share one worker's event stream, since browsers allow only six connections
 # to a server. Chrome on Android has no shared workers.
 _SCRIPTS = {
+    # URLs are relative to the script, since a page's <base> can lead elsewhere.
     _SCRIPT_PATH: (
         'if (typeof SharedWorker === "function") {\n'
-        f'  const port = new SharedWorker("{_WORKER_PATH}").port;\n'
+        f'  const url = new URL("{_WORKER_PATH}", document.currentScript.src);\n'
+        "  const port = new SharedWorker(url).port;\n"
         "  port.onmessage = () => location.reload();\n"
         '  addEventListener("pagehide", () => port.postMessage(false));\n'
         '  addEventListener("pageshow", () => port.postMessage(true));\n'
         "} else {\n"
-        f'  new EventSource("{_EVENTS_PATH}").onmessage = () => location.reload();\n'
+        f'  const url = new URL("{_EVENTS_PATH}", document.currentScript.src);\n'
+        "  new EventSource(url).onmessage = () => location.reload();\n"
         "}\n"
     ),
     # Pages say whether they're open, since one can cancel its reload or come back
@@ -53,8 +57,6 @@ _SCRIPTS = {
         "};\n"
     ),
 }
-
-_SCRIPT_TAG = f'<script src="{_SCRIPT_PATH}"></script>'.encode()
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -98,7 +100,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().copyfile(source, outputfile)
 
         if self._html:
-            outputfile.write(cast("AnyStr", _SCRIPT_TAG))
+            outputfile.write(cast("AnyStr", self._script_tag()))
 
     def do_GET(self) -> None:
         """Serve a GET request."""
@@ -143,7 +145,7 @@ class Handler(SimpleHTTPRequestHandler):
             self._html = value.partition(";")[0].strip().lower() == "text/html"
 
         if self._html and keyword_lower == "content-length":
-            value = str(int(value) + len(_SCRIPT_TAG))
+            value = str(int(value) + len(self._script_tag()))
 
         super().send_header(keyword, value)
 
@@ -170,6 +172,13 @@ class Handler(SimpleHTTPRequestHandler):
             )
 
         return False
+
+    def _script_tag(self) -> bytes:
+        """The tag that adds the reload script to an HTML body."""
+        # Absolute, since a page's <base> can lead elsewhere.
+        host = self.headers.get("Host")
+        src = f"http://{host}{_SCRIPT_PATH}" if host else _SCRIPT_PATH
+        return f'<script src="{escape(src)}"></script>'.encode()
 
     def _send_events(self) -> None:
         """Send an event each time pages reload, until the server stops."""

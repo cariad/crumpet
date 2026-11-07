@@ -156,7 +156,9 @@ def test_server_adds_reload_script_to_html(
     with the reload script appended, however the HTML is written.
     """
     (tmp_path / file).write_text(content)
-    script = b'<script src="/__crumpet__/reload.js"></script>'
+    script = (
+        f'<script src="http://localhost:{free_port}/__crumpet__/reload.js"></script>'
+    ).encode()
 
     with (
         Server(
@@ -774,6 +776,32 @@ def test_server_reloads_pages_with_strict_csp(
     assert result
 
 
+def test_server_reloads_pages_with_base_elsewhere(
+    browser_page: Page,
+    busy_port: int,
+    events_opened: Event,
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """Assert that a page whose `<base href>` points at another site reloads."""
+    (tmp_path / "index.html").write_text(
+        f'<base href="http://127.0.0.1:{busy_port}/">',
+    )
+
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
+        browser_page.goto(server.url)
+        result = reloads(
+            browser_page,
+            server,
+            events_opened,
+        )
+
+    assert result
+
+
 def test_server_raises_when_entered_after_closing(
     free_port: int,
     tmp_path: Path,
@@ -930,13 +958,16 @@ def test_server_serves_wherever_localhost_leads(
         param(
             "reload.js",
             b'if (typeof SharedWorker === "function") {\n'
-            b'  const port = new SharedWorker("/__crumpet__/worker.js").port;\n'
+            b'  const url = new URL("/__crumpet__/worker.js", '
+            b"document.currentScript.src);\n"
+            b"  const port = new SharedWorker(url).port;\n"
             b"  port.onmessage = () => location.reload();\n"
             b'  addEventListener("pagehide", () => port.postMessage(false));\n'
             b'  addEventListener("pageshow", () => port.postMessage(true));\n'
             b"} else {\n"
-            b'  new EventSource("/__crumpet__/events")'
-            b".onmessage = () => location.reload();\n"
+            b'  const url = new URL("/__crumpet__/events", '
+            b"document.currentScript.src);\n"
+            b"  new EventSource(url).onmessage = () => location.reload();\n"
             b"}\n",
             id="reload",
         ),
