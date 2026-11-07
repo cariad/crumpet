@@ -132,8 +132,9 @@ def _settle(page: HTTPResponse) -> None:
     Wait for a heartbeat on `page`, so that changes made before watching started can't
     be mistaken for later ones. macOS can report them once watching has started.
     """
-    while _next_event(page) != b":\n":
-        pass
+    while (event := _next_event(page)) != b":\n":
+        if not event:
+            raise EOFError
 
 
 @contextmanager
