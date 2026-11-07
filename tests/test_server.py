@@ -1097,24 +1097,27 @@ def test_server_serves_wherever_localhost_leads(
     [
         param(
             "reload.js",
-            b"const src = new URL(document.currentScript.src);\n"
-            b'let served = Number(src.searchParams.get("reloads"));\n'
-            b'if (typeof SharedWorker === "function") {\n'
-            b'  const url = new URL("/__crumpet__/worker.js", src);\n'
-            b'  const port = new SharedWorker(url, "reloads").port;\n'
-            b"  port.onmessage = () => location.reload();\n"
-            b"  port.postMessage(served);\n"
-            b'  addEventListener("pagehide", () => port.postMessage(false));\n'
-            b'  addEventListener("pageshow", (event) => {\n'
-            b"    if (event.persisted) port.postMessage(served);\n"
-            b"  });\n"
-            b"} else {\n"
-            b'  const events = new EventSource(new URL("/__crumpet__/events", src));\n'
-            b"  events.onmessage = (event) => {\n"
-            b"    const reloads = Number(event.data);\n"
-            b"    if (served < reloads) location.reload();\n"
-            b"    else served = reloads;\n"
-            b"  };\n"
+            b"{\n"
+            b"  const src = new URL(document.currentScript.src);\n"
+            b'  let served = Number(src.searchParams.get("reloads"));\n'
+            b'  if (typeof SharedWorker === "function") {\n'
+            b'    const url = new URL("/__crumpet__/worker.js", src);\n'
+            b'    const port = new SharedWorker(url, "reloads").port;\n'
+            b"    port.onmessage = () => location.reload();\n"
+            b"    port.postMessage(served);\n"
+            b'    addEventListener("pagehide", () => port.postMessage(false));\n'
+            b'    addEventListener("pageshow", (event) => {\n'
+            b"      if (event.persisted) port.postMessage(served);\n"
+            b"    });\n"
+            b"  } else {\n"
+            b'    const url = new URL("/__crumpet__/events", src);\n'
+            b"    const events = new EventSource(url);\n"
+            b"    events.onmessage = (event) => {\n"
+            b"      const reloads = Number(event.data);\n"
+            b"      if (served < reloads) location.reload();\n"
+            b"      else served = reloads;\n"
+            b"    };\n"
+            b"  }\n"
             b"}\n",
             id="reload",
         ),

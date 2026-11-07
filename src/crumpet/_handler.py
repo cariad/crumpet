@@ -37,24 +37,27 @@ _SCRIPTS = {
     #
     # The worker is named apart from ones that older versions left running.
     _SCRIPT_PATH: (
-        "const src = new URL(document.currentScript.src);\n"
-        'let served = Number(src.searchParams.get("reloads"));\n'
-        'if (typeof SharedWorker === "function") {\n'
-        f'  const url = new URL("{_WORKER_PATH}", src);\n'
-        '  const port = new SharedWorker(url, "reloads").port;\n'
-        "  port.onmessage = () => location.reload();\n"
-        "  port.postMessage(served);\n"
-        '  addEventListener("pagehide", () => port.postMessage(false));\n'
-        '  addEventListener("pageshow", (event) => {\n'
-        "    if (event.persisted) port.postMessage(served);\n"
-        "  });\n"
-        "} else {\n"
-        f'  const events = new EventSource(new URL("{_EVENTS_PATH}", src));\n'
-        "  events.onmessage = (event) => {\n"
-        "    const reloads = Number(event.data);\n"
-        "    if (served < reloads) location.reload();\n"
-        "    else served = reloads;\n"
-        "  };\n"
+        "{\n"
+        "  const src = new URL(document.currentScript.src);\n"
+        '  let served = Number(src.searchParams.get("reloads"));\n'
+        '  if (typeof SharedWorker === "function") {\n'
+        f'    const url = new URL("{_WORKER_PATH}", src);\n'
+        '    const port = new SharedWorker(url, "reloads").port;\n'
+        "    port.onmessage = () => location.reload();\n"
+        "    port.postMessage(served);\n"
+        '    addEventListener("pagehide", () => port.postMessage(false));\n'
+        '    addEventListener("pageshow", (event) => {\n'
+        "      if (event.persisted) port.postMessage(served);\n"
+        "    });\n"
+        "  } else {\n"
+        f'    const url = new URL("{_EVENTS_PATH}", src);\n'
+        "    const events = new EventSource(url);\n"
+        "    events.onmessage = (event) => {\n"
+        "      const reloads = Number(event.data);\n"
+        "      if (served < reloads) location.reload();\n"
+        "      else served = reloads;\n"
+        "    };\n"
+        "  }\n"
         "}\n"
     ),
     # Pages say whether they're open, since one can cancel its reload or come back
