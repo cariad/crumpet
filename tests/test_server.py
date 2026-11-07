@@ -4,6 +4,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from os import utime
 from pathlib import Path
+from select import select
 from shutil import rmtree
 from socket import (
     AF_INET,
@@ -19,7 +20,7 @@ from socket import (
 from threading import Event, Thread
 from typing import NamedTuple
 
-from notwork import PortInUseError, PortOutOfRangeError
+from notwork import PortInUseError, PortOutOfRangeError, claim_port
 from playwright.sync_api import Page, Route
 from pytest import MonkeyPatch, mark, param, raises
 
@@ -29,6 +30,18 @@ from tests.pages import get, next_event, open_page, reloads, settle
 
 # Sent with every response.
 _NO_STORE = ("Cache-Control", "no-store")
+
+# Scripts that set up pages with and without shared workers.
+_INIT_SCRIPTS = [
+    param(
+        "",
+        id="shared-worker",
+    ),
+    param(
+        "delete window.SharedWorker;",
+        id="no-shared-worker",
+    ),
+]
 
 
 class _Response(NamedTuple):
@@ -325,6 +338,54 @@ def test_server_frees_port_when_watching_fails(
         result = _get(server.url).status
 
     expect = 200
+
+    assert result == expect
+
+
+@mark.parametrize(
+    "init_script",
+    _INIT_SCRIPTS,
+)
+def test_server_leaves_open_pages_when_stopped(
+    browser_page: Page,
+    events_opened: Event,
+    free_port: int,
+    init_script: str,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that stopping a server leaves open pages as they are, with or without
+    shared workers.
+    """
+    navigations: list[str] = []
+
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
+        browser_page.add_init_script(init_script)
+        browser_page.goto(server.url)
+        assert events_opened.wait(5)
+
+        browser_page.on(
+            "framenavigated",
+            lambda frame: navigations.append(frame.url),
+        )
+
+    # Listen where the server was, to see the event stream try to reconnect.
+    with claim_port(free_port) as claimed:
+        for sock in claimed.sockets:
+            sock.listen()
+
+        reconnected, _, _ = select(claimed.sockets, [], [], 10)
+
+    assert reconnected
+
+    # Long enough for a reload to start.
+    browser_page.wait_for_timeout(1000)
+
+    result = navigations
+    expect: list[str] = []
 
     assert result == expect
 
@@ -751,16 +812,7 @@ def test_server_reloads_once_per_replacement(
 
 @mark.parametrize(
     "init_script",
-    [
-        param(
-            "",
-            id="shared-worker",
-        ),
-        param(
-            "delete window.SharedWorker;",
-            id="no-shared-worker",
-        ),
-    ],
+    _INIT_SCRIPTS,
 )
 @mark.parametrize(
     "watch",
@@ -832,16 +884,7 @@ def test_server_reloads_pages_still_loading(
 
 @mark.parametrize(
     "init_script",
-    [
-        param(
-            "",
-            id="shared-worker",
-        ),
-        param(
-            "delete window.SharedWorker;",
-            id="no-shared-worker",
-        ),
-    ],
+    _INIT_SCRIPTS,
 )
 def test_server_reloads_pages_that_load_more_html(
     browser_page: Page,
