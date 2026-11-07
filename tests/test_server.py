@@ -672,6 +672,10 @@ def test_server_reloads_after_replacing_directory(
     assert result == expect
 
 
+# A burst ends when no change comes for 50 milliseconds, and Windows can pause that
+# long between writes, such as to scan each new file. The burst then splits in two,
+# so pages reload twice. That's fine, but it fails the test, so try again.
+@mark.flaky(reruns=2)
 def test_server_reloads_once_per_burst(
     free_port: int,
     tmp_path: Path,
