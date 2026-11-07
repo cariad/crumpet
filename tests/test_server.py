@@ -4,6 +4,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from os import utime
 from pathlib import Path
+from shutil import rmtree
 from socket import (
     AF_INET,
     AF_INET6,
@@ -627,6 +628,54 @@ def test_server_reloads_after_change(
     assert result == expect
 
 
+def test_server_reloads_after_replacing_directory(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that a watching server keeps reloading open pages after its directory is
+    deleted and created again.
+    """
+    public = tmp_path / "public"
+    public.mkdir()
+
+    with (
+        Server(
+            public,
+            port=free_port,
+            watch=True,
+        ) as server,
+        open_page(server.url) as page,
+    ):
+        settle(page)
+        rmtree(public)
+        settle(page)
+
+        public.mkdir()
+        (public / "index.html").write_text("Built")
+        created = next_event(page)
+        settle(page)
+
+        (public / "index.html").write_text("Rebuilt")
+        changed = next_event(page)
+
+    result = [
+        created,
+        changed,
+    ]
+
+    expect = [
+        b"data: reload\n",
+        b"data: reload\n",
+    ]
+
+    assert result == expect
+
+
+# A burst ends when no change comes for 50 milliseconds, and Windows can pause that
+# long between writes, such as to scan each new file. The burst then splits in two,
+# so pages reload twice. That's fine, but it fails the test, so try again.
+@mark.flaky(reruns=2)
 def test_server_reloads_once_per_burst(
     free_port: int,
     tmp_path: Path,
@@ -644,6 +693,43 @@ def test_server_reloads_once_per_burst(
 
         for index in range(20):
             (tmp_path / f"{index}.html").write_text("Built")
+
+        # A second reload would come before the next heartbeat.
+        result = [
+            next_event(page),
+            next_event(page),
+        ]
+
+    expect = [
+        b"data: reload\n",
+        b":\n",
+    ]
+
+    assert result == expect
+
+
+def test_server_reloads_once_per_replacement(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that a watching server reloads open pages once when its directory is
+    deleted and created again in one burst.
+    """
+    public = tmp_path / "public"
+    public.mkdir()
+
+    with (
+        Server(
+            public,
+            port=free_port,
+            watch=True,
+        ) as server,
+        open_page(server.url) as page,
+    ):
+        settle(page)
+        rmtree(public)
+        public.mkdir()
 
         # A second reload would come before the next heartbeat.
         result = [
@@ -702,6 +788,44 @@ def test_server_raises_when_entered_again(
 
     result = str(ex.value)
     expect = "A server can only be entered once"
+
+    assert result == expect
+
+
+@mark.parametrize(
+    "path",
+    [
+        "",
+        "notes.txt",
+    ],
+)
+def test_server_serves_404s_while_directory_is_gone(
+    free_port: int,
+    path: str,
+    tmp_path: Path,
+) -> None:
+    """Assert that a watching server serves 404s while its directory is gone."""
+    public = tmp_path / "public"
+    public.mkdir()
+    (public / "notes.txt").write_text("Notes")
+
+    with (
+        Server(
+            public,
+            port=free_port,
+            watch=True,
+        ) as server,
+        open_page(server.url) as page,
+    ):
+        settle(page)
+        rmtree(public)
+
+        # Stops while waiting for the directory to come back.
+        settle(page)
+
+        result = _get(server.url + path).status
+
+    expect = 404
 
     assert result == expect
 

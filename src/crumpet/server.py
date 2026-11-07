@@ -1,18 +1,25 @@
-from collections.abc import Iterable, Sized
-from contextlib import ExitStack
+from collections.abc import Generator, Iterable
+from contextlib import ExitStack, closing, suppress
 from errno import ENOENT, ENOTDIR
 from itertools import chain
-from os import PathLike, fspath, strerror
+from os import PathLike, fspath, stat, stat_result, strerror
+from os.path import samestat
+from pathlib import Path
 from stat import S_ISDIR
+from sys import platform
 from threading import Event, Thread
 from typing import Self
 
 import watchfiles
 from notwork import claim_port
 from rootle import resolve, status
+from watchfiles import Change
 
 from ._listener import Listener
 from ._reloader import Reloader
+
+# Milliseconds between checks for changes and for a replaced directory.
+_INTERVAL = 50
 
 
 class Server:
@@ -56,15 +63,9 @@ class Server:
             raise RuntimeError("A closed server can't be entered")
 
         if self._watch:
-            # Watching yields when it's idle too, so that the first yield means it's
-            # started, and no change after entering is missed.
-            changes = watchfiles.watch(
-                self._directory,
-                rust_timeout=50,
-                stop_event=self._stop_watching,
-                watch_filter=None,
-                yield_on_timeout=True,
-            )
+            # The first yield means that watching has started, so no change after
+            # entering is missed.
+            changes = self._changes()
 
             try:
                 first = next(changes)
@@ -184,12 +185,86 @@ class Server:
         """URL of the served directory."""
         return f"http://localhost:{self._port}/"
 
+    def _changes(self) -> Generator[bool]:
+        """
+        Yield whether anything changed each time watching yields, until stopped.
+
+        Watches again whenever the directory is replaced, since a watch on Linux and
+        Windows ends with the directory that it started on.
+        """
+        replaced = False
+        watched = _status(self._directory)
+
+        while True:
+            try:
+                # Watching yields when it's idle too, so that a replacement is noticed.
+                with closing(
+                    watchfiles.watch(
+                        self._directory,
+                        rust_timeout=_INTERVAL,
+                        stop_event=self._stop_watching,
+                        watch_filter=None,
+                        yield_on_timeout=True,
+                    ),
+                ) as changes:
+                    for burst in changes:
+                        current = _status(self._directory)
+                        same = watched and current and samestat(watched, current)
+
+                        # Linux can give a new directory the old one's inode. macOS
+                        # can report a deletion from before watching started.
+                        deleted = (
+                            platform == "linux"
+                            and (Change.deleted, str(self._directory)) in burst
+                        )
+
+                        replacing = not same or deleted
+
+                        # A replacement that's already present is reported once
+                        # watching it starts.
+                        if not (replacing and current):
+                            # Changes made before watching again were missed.
+                            yield bool(burst) or replaced
+                            replaced = False
+
+                        if replacing:
+                            break
+
+                    else:
+                        return
+
+            # The directory can go again before watching it again starts.
+            except OSError:
+                if not replaced:
+                    raise
+
+                if self._stop_watching.wait(_INTERVAL / 1000):  # pragma: no cover
+                    return
+
+            replaced = True
+
+            while (watched := _status(self._directory)) is None:
+                if self._stop_watching.wait(_INTERVAL / 1000):
+                    return
+
     def _reload_after_changes(
         self,
-        changes: Iterable[Sized],
+        changes: Iterable[bool],
     ) -> None:
-        """Reload every open HTML page after each burst of `changes`."""
-        for burst in changes:
-            # Empty when watching was idle.
-            if burst:
+        """Reload every open HTML page each time `changes` yields that something did."""
+        for changed in changes:
+            if changed:
                 self._reloader.reload()
+
+
+def _status(path: Path) -> stat_result | None:
+    """
+    Get the status of `path`, or `None` on any error.
+
+    Unlike `status`, this never raises, since Windows denies access to a directory
+    that's being deleted, and raising would stop watching.
+    """
+    with suppress(OSError):
+        return stat(path)
+
+    return None
