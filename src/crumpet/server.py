@@ -4,15 +4,16 @@ from errno import ENOENT, ENOTDIR
 from itertools import chain
 from os import PathLike, fspath, stat, stat_result, strerror
 from os.path import samestat
-from pathlib import Path
+from pathlib import Path, PurePath
 from stat import S_ISDIR
 from sys import platform
 from threading import Event, Thread
 from typing import Self
+from urllib.parse import quote
 
 import watchfiles
 from notwork import claim_port
-from rootle import resolve, status
+from rootle import ends_like_directory, resolve, status
 from watchfiles import Change
 
 from ._listener import Listener
@@ -189,6 +190,50 @@ class Server:
     def url(self) -> str:
         """URL of the served directory."""
         return f"http://localhost:{self._port}/"
+
+    def url_for(self, path: PathLike[str] | str) -> str:
+        """
+        Get the URL of a file in the served directory.
+
+        The path is read as it's written, so symlinks aren't followed.
+
+        End a directory's path with a separator, or its URL redirects.
+
+        Files under `__crumpet__/` aren't served.
+
+        **Windows:** Backslashes separate names too.
+
+        Args:
+            path: Path to the file, relative to the served directory.
+
+        Raises:
+            ValueError:
+                - When `path` has a root or a drive.
+                - When `path` leads outside the served directory.
+        """
+        pure = PurePath(path)
+
+        if pure.anchor:
+            raise ValueError(f"Path {fspath(path)!r} must be relative")
+
+        names: list[str] = []
+
+        for name in pure.parts:
+            if name != "..":
+                names.append(name)
+            elif names:
+                names.pop()
+            else:
+                raise ValueError(f"Path {fspath(path)!r} leads outside the directory")
+
+        if ends_like_directory(path):
+            names.append("")
+
+        # Python's server decodes names that aren't valid UTF-8 this way.
+        return self.url + quote(
+            "/".join(names),
+            errors="surrogatepass",
+        )
 
     def wait(self) -> None:
         """

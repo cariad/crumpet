@@ -2,12 +2,33 @@ from collections.abc import Generator
 from contextlib import closing, contextmanager
 from http.client import HTTPConnection, HTTPResponse
 from threading import Event
+from typing import NamedTuple
 from urllib.parse import urljoin, urlsplit
 
 from playwright.sync_api import Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from crumpet import Server
+
+
+class Response(NamedTuple):
+    """A response, without its date."""
+
+    status: int
+    headers: list[tuple[str, str]]
+    body: bytes
+
+
+def fetch(url: str) -> Response:
+    """Get `url`, without following a redirect."""
+    with get(url) as response:
+        return Response(
+            status=response.status,
+            headers=[
+                (name, value) for name, value in response.getheaders() if name != "Date"
+            ],
+            body=response.read(),
+        )
 
 
 @contextmanager
