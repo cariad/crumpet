@@ -66,6 +66,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         server = Server(
             args.directory,
             port=args.port,
+            watch=True,
         )
 
     except FileNotFoundError:
@@ -95,3 +96,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     except KeyboardInterrupt:
         return 130
+
+    except OSError as ex:
+        return _error(f"Can't watch '{args.directory}': {ex}")
