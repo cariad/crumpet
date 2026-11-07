@@ -107,6 +107,11 @@ class Handler(SimpleHTTPRequestHandler):
         else:
             super().do_GET()
 
+    def end_headers(self) -> None:
+        """End the response's headers, telling browsers not to cache it."""
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def send_head(self) -> BinaryIO | None:
         """Send the response's status and headers, and return its body."""
         path = urlsplit(self.path).path
