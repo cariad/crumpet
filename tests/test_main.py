@@ -100,7 +100,9 @@ def test_main_reloads_after_change(
     assert exit_code == 130
 
     result = events
-    expect = [b"data: reload\n"]
+    expect = [
+        b"data: \n",
+    ]
 
     assert result == expect
 

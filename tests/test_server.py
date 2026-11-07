@@ -20,7 +20,7 @@ from threading import Event, Thread
 from typing import NamedTuple
 
 from notwork import PortInUseError, PortOutOfRangeError
-from playwright.sync_api import Page
+from playwright.sync_api import Page, Route
 from pytest import MonkeyPatch, mark, param, raises
 
 from crumpet import Server
@@ -157,7 +157,8 @@ def test_server_adds_reload_script_to_html(
     """
     (tmp_path / file).write_text(content)
     script = (
-        f'<script src="http://localhost:{free_port}/__crumpet__/reload.js"></script>'
+        f'<script src="http://localhost:{free_port}/__crumpet__/reload.js?reloads=0">'
+        "</script>"
     ).encode()
 
     with (
@@ -526,13 +527,13 @@ def test_server_reload_reloads_open_pages(
         server.reload()
 
         result = [
-            first.readline(),
-            second.readline(),
+            next_event(first),
+            next_event(second),
         ]
 
     expect = [
-        b"data: reload\n",
-        b"data: reload\n",
+        b"data: \n",
+        b"data: \n",
     ]
 
     assert result == expect
@@ -624,8 +625,8 @@ def test_server_reloads_after_change(
         ]
 
     expect = [
-        b"data: reload\n",
-        b"data: reload\n",
+        b"data: \n",
+        b"data: \n",
     ]
 
     assert result == expect
@@ -668,8 +669,8 @@ def test_server_reloads_after_replacing_directory(
     ]
 
     expect = [
-        b"data: reload\n",
-        b"data: reload\n",
+        b"data: \n",
+        b"data: \n",
     ]
 
     assert result == expect
@@ -704,7 +705,7 @@ def test_server_reloads_once_per_burst(
         ]
 
     expect = [
-        b"data: reload\n",
+        b"data: \n",
         b":\n",
     ]
 
@@ -741,9 +742,90 @@ def test_server_reloads_once_per_replacement(
         ]
 
     expect = [
-        b"data: reload\n",
+        b"data: \n",
         b":\n",
     ]
+
+    assert result == expect
+
+
+@mark.parametrize(
+    "init_script",
+    [
+        param(
+            "",
+            id="shared-worker",
+        ),
+        param(
+            "delete window.SharedWorker;",
+            id="no-shared-worker",
+        ),
+    ],
+)
+@mark.parametrize(
+    "watch",
+    [
+        False,
+        True,
+    ],
+)
+def test_server_reloads_pages_still_loading(
+    browser_page: Page,
+    free_port: int,
+    init_script: str,
+    tmp_path: Path,
+    watch: bool,
+) -> None:
+    """
+    Assert that a page that's still loading when pages reload, from `reload()` or from
+    watching, reloads, with or without shared workers.
+    """
+    index = tmp_path / "index.html"
+
+    # The reload script can't run until this script loads.
+    index.write_text('<script src="slow.js"></script><p>Old</p>')
+
+    with (
+        Server(
+            tmp_path,
+            port=free_port,
+            watch=watch,
+        ) as server,
+        open_page(server.url) as events,
+    ):
+        if watch:
+            settle(events)
+
+        def reload_then_load(route: Route) -> None:
+            index.write_text("<p>New</p>")
+
+            if not watch:
+                server.reload()
+
+            while next_event(events) == b":\n":
+                pass
+
+            route.fulfill(body="")
+
+        browser_page.route(
+            "**/slow.js",
+            reload_then_load,
+        )
+
+        browser_page.add_init_script(init_script)
+        browser_page.goto(
+            server.url,
+            wait_until="commit",
+        )
+
+        browser_page.wait_for_selector(
+            "text=New",
+            timeout=5000,
+        )
+
+        result = browser_page.inner_text("p")
+
+    expect = "New"
 
     assert result == expect
 
@@ -1015,35 +1097,50 @@ def test_server_serves_wherever_localhost_leads(
     [
         param(
             "reload.js",
+            b"const src = new URL(document.currentScript.src);\n"
+            b'let served = Number(src.searchParams.get("reloads"));\n'
             b'if (typeof SharedWorker === "function") {\n'
-            b'  const url = new URL("/__crumpet__/worker.js", '
-            b"document.currentScript.src);\n"
-            b"  const port = new SharedWorker(url).port;\n"
+            b'  const url = new URL("/__crumpet__/worker.js", src);\n'
+            b'  const port = new SharedWorker(url, "reloads").port;\n'
             b"  port.onmessage = () => location.reload();\n"
+            b"  port.postMessage(served);\n"
             b'  addEventListener("pagehide", () => port.postMessage(false));\n'
-            b'  addEventListener("pageshow", () => port.postMessage(true));\n'
+            b'  addEventListener("pageshow", (event) => {\n'
+            b"    if (event.persisted) port.postMessage(served);\n"
+            b"  });\n"
             b"} else {\n"
-            b'  const url = new URL("/__crumpet__/events", '
-            b"document.currentScript.src);\n"
-            b"  new EventSource(url).onmessage = () => location.reload();\n"
+            b'  const events = new EventSource(new URL("/__crumpet__/events", src));\n'
+            b"  events.onmessage = (event) => {\n"
+            b"    const reloads = Number(event.data);\n"
+            b"    if (served < reloads) location.reload();\n"
+            b"    else served = reloads;\n"
+            b"  };\n"
             b"}\n",
             id="reload",
         ),
         param(
             "worker.js",
-            b"const ports = new Set();\n"
+            b"const pages = new Map();\n"
             b"let events = null;\n"
+            b"let reloads = 0;\n"
             b"onconnect = (event) => {\n"
             b"  const port = event.ports[0];\n"
-            b"  ports.add(port);\n"
-            b"  port.onmessage = (message) => {\n"
-            b"    if (message.data) ports.add(port);\n"
-            b"    else ports.delete(port);\n"
+            b"  port.onmessage = ({ data }) => {\n"
+            b"    if (data === false) return pages.delete(port);\n"
+            b"    pages.set(port, data);\n"
+            b"    if (data < reloads) port.postMessage(null);\n"
             b"  };\n"
             b"  if (events) return;\n"
             b'  events = new EventSource("/__crumpet__/events");\n'
-            b"  events.onmessage = () => {\n"
-            b"    for (const port of ports) port.postMessage(null);\n"
+            b"  events.onerror = () => {\n"
+            b"    reloads = 0;\n"
+            b"  };\n"
+            b"  events.onmessage = (event) => {\n"
+            b"    reloads = Number(event.data);\n"
+            b"    for (const [port, served] of pages) {\n"
+            b"      if (served < reloads) port.postMessage(null);\n"
+            b"      else pages.set(port, reloads);\n"
+            b"    }\n"
             b"  };\n"
             b"};\n",
             id="worker",
