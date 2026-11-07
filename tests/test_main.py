@@ -407,8 +407,9 @@ import sys
 
 from crumpet._main import main
 
-# Handle Ctrl+C even if the test runner ignores it.
+# Handle Ctrl+C even if the test runner ignores or blocks it.
 signal.signal(signal.SIGINT, signal.default_int_handler)
+signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT})
 sys.exit(main())
 """
 """Runs the command."""
