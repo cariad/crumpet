@@ -1,5 +1,5 @@
 from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from os import utime
@@ -957,6 +957,95 @@ def test_server_serves_reload_scripts(
         "no-store",
         body,
     )
+
+    assert result == expect
+
+
+def test_server_wait_raises_before_entering(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """Assert that waiting on a server before entering it raises `RuntimeError`."""
+    server = Server(
+        tmp_path,
+        port=free_port,
+    )
+
+    with (
+        closing(server),
+        raises(RuntimeError) as ex,
+    ):
+        server.wait()
+
+    result = str(ex.value)
+    expect = "A server can't be waited on before it's entered"
+
+    assert result == expect
+
+
+@mark.usefixtures("watching_fails_after_start")
+def test_server_wait_raises_when_watching_fails(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """Assert that `wait()` raises the error when watching fails after it starts."""
+    with (
+        Server(
+            tmp_path,
+            port=free_port,
+            watch=True,
+        ) as server,
+        raises(OSError) as ex,
+    ):
+        server.wait()
+
+    result = str(ex.value)
+    expect = "OS file watch limit reached"
+
+    assert result == expect
+
+
+@mark.parametrize(
+    "watch",
+    [
+        False,
+        True,
+    ],
+)
+def test_server_wait_returns_when_closed(
+    free_port: int,
+    tmp_path: Path,
+    watch: bool,
+) -> None:
+    """
+    Assert that `wait()` blocks until the server is closed, and returns once its port
+    is free.
+    """
+    with Server(
+        tmp_path,
+        port=free_port,
+        watch=watch,
+    ) as server:
+        waiter = Thread(target=server.wait)
+        waiter.start()
+        waiter.join(timeout=0.1)
+        waiting = waiter.is_alive()
+
+        closer = Thread(target=server.close)
+        closer.start()
+        waiter.join()
+
+        # Before `close()` returns.
+        with Server(
+            tmp_path,
+            port=free_port,
+        ) as again:
+            status = _get(again.url).status
+
+        closer.join()
+
+    result = (waiting, status)
+    expect = (True, 200)
 
     assert result == expect
 

@@ -1,14 +1,18 @@
 import sys
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 from runpy import run_module
+from signal import SIGINT
+from subprocess import PIPE, Popen
+from threading import Timer
+from typing import IO, cast
 from urllib.request import urlopen
 
 from pytest import CaptureFixture, MonkeyPatch, mark, raises
 
 from crumpet import Server
 from crumpet._main import main
-from tests.marks import posix_only
+from tests.marks import posix_only, windows_only
 from tests.pages import next_event, open_page, settle
 
 
@@ -71,7 +75,7 @@ def test_main_reloads_after_change(
     """Assert that the command reloads every open page after a change."""
     events: list[bytes] = []
 
-    def change_then_press_ctrl_c(_: float) -> None:
+    def change_then_press_ctrl_c(_: Server) -> None:
         with open_page(f"http://localhost:{free_port}/") as page:
             settle(page)
             (tmp_path / "index.html").write_text("Built")
@@ -80,7 +84,8 @@ def test_main_reloads_after_change(
         raise KeyboardInterrupt
 
     monkeypatch.setattr(
-        "crumpet._main.sleep",
+        Server,
+        "wait",
         change_then_press_ctrl_c,
     )
 
@@ -264,6 +269,56 @@ def test_main_reports_watch_failure(
     assert result == expect
 
 
+@mark.parametrize(
+    "watching_fails_after_start",
+    [
+        OSError("OS file watch limit reached"),
+        RuntimeError("watch thread unexpectedly received a signal"),
+    ],
+    indirect=True,
+)
+def test_main_reports_watch_failure_after_start(
+    capsys: CaptureFixture[str],
+    free_port: int,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    watching_fails_after_start: Exception,
+) -> None:
+    """
+    Assert that watching that fails after it starts is reported, and that the command
+    stops serving and frees the port.
+    """
+    (tmp_path / "build").mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main(
+        [
+            "build",
+            "--port",
+            str(free_port),
+        ],
+    )
+
+    assert exit_code == 1
+
+    result = capsys.readouterr()
+
+    expect = (
+        "",
+        f"crumpet: Serving 'build' at http://localhost:{free_port}/\n"
+        "crumpet: Press Ctrl+C to stop.\n"
+        f"crumpet: error: Can't watch 'build': {watching_fails_after_start}\n",
+    )
+
+    assert result == expect
+
+    # Raises if the port is still claimed.
+    Server(
+        tmp_path,
+        port=free_port,
+    ).close()
+
+
 def test_main_serves_until_ctrl_c(
     capsys: CaptureFixture[str],
     free_port: int,
@@ -280,7 +335,7 @@ def test_main_serves_until_ctrl_c(
     printed: list[tuple[str, str]] = []
     statuses: list[int] = []
 
-    def press_ctrl_c(_: float) -> None:
+    def press_ctrl_c(_: Server) -> None:
         printed.append(capsys.readouterr())
 
         with urlopen(
@@ -298,7 +353,8 @@ def test_main_serves_until_ctrl_c(
         raise KeyboardInterrupt
 
     monkeypatch.setattr(
-        "crumpet._main.sleep",
+        Server,
+        "wait",
         press_ctrl_c,
     )
 
@@ -343,6 +399,123 @@ def test_main_serves_until_ctrl_c(
         tmp_path,
         port=free_port,
     ).close()
+
+
+_RUN_THEN_PRESS_CTRL_C_ON_WINDOWS = """
+import ctypes
+import sys
+import threading
+
+from crumpet._main import main
+
+kernel32 = ctypes.windll.kernel32
+
+# Handle Ctrl+C even if the test runner ignores it.
+kernel32.SetConsoleCtrlHandler(None, False)
+
+def press_ctrl_c():
+    sys.stdin.read()
+
+    # Every process on this console, which is only this one.
+    kernel32.GenerateConsoleCtrlEvent(0, 0)
+
+threading.Thread(target=press_ctrl_c, daemon=True).start()
+sys.exit(main())
+"""
+"""Runs the command, and presses Ctrl+C once stdin closes."""
+
+
+def _assert_ctrl_c_stops(
+    command: list[str],
+    free_port: int,
+    tmp_path: Path,
+    press_ctrl_c: Callable[[Popen[str]], None],
+    creationflags: int = 0,
+) -> None:
+    """
+    Assert that `press_ctrl_c` stops `command` while it waits, then frees the port and
+    exits with 130, printing nothing more.
+    """
+    (tmp_path / "build").mkdir()
+
+    with Popen(
+        [
+            sys.executable,
+            *command,
+            "build",
+            "--port",
+            str(free_port),
+        ],
+        creationflags=creationflags,
+        cwd=tmp_path,
+        stderr=PIPE,
+        stdin=PIPE,
+        stdout=PIPE,
+        text=True,
+    ) as process:
+        # Kills a stuck command, so that reading from it can't block forever.
+        timer = Timer(30, process.kill)
+        timer.start()
+
+        try:
+            stderr = cast(IO[str], process.stderr)
+            started = stderr.readline() + stderr.readline()
+            press_ctrl_c(process)
+            stdout, stopped = process.communicate()
+
+        finally:
+            timer.cancel()
+
+    result = (process.returncode, stdout, started + stopped)
+
+    expect = (
+        130,
+        "",
+        f"crumpet: Serving 'build' at http://localhost:{free_port}/\n"
+        "crumpet: Press Ctrl+C to stop.\n",
+    )
+
+    assert result == expect
+
+    # Raises if the port is still claimed.
+    Server(
+        tmp_path,
+        port=free_port,
+    ).close()
+
+
+@posix_only
+def test_main_stops_on_ctrl_c_on_posix(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """Assert that a real Ctrl+C stops the command while it waits, on POSIX."""
+    _assert_ctrl_c_stops(
+        ["-m", "crumpet"],
+        free_port,
+        tmp_path,
+        lambda process: process.send_signal(SIGINT),
+    )
+
+
+@windows_only
+def test_main_stops_on_ctrl_c_on_windows(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """Assert that a real Ctrl+C stops the command while it waits, on Windows."""
+    # Lets type checkers on other systems see Windows-only names.
+    assert sys.platform == "win32"
+
+    from subprocess import CREATE_NEW_CONSOLE
+
+    _assert_ctrl_c_stops(
+        ["-c", _RUN_THEN_PRESS_CTRL_C_ON_WINDOWS],
+        free_port,
+        tmp_path,
+        lambda process: cast(IO[str], process.stdin).close(),
+        creationflags=CREATE_NEW_CONSOLE,
+    )
 
 
 def test_python_m_crumpet_calls_itself_crumpet(

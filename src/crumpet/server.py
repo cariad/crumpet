@@ -54,6 +54,7 @@ class Server:
         Start serving.
 
         Raises:
+            OSError: When watching can't start.
             RuntimeError: When the server has already been entered or closed.
         """
         if self._served:
@@ -145,7 +146,9 @@ class Server:
         self._reloader = reloader
         self._served: list[Listener] = []
         self._stop_watching = Event()
+        self._wake = Event()
         self._watch = watch
+        self._watch_error: Exception | None = None
         self._watcher: Thread | None = None
 
     def close(self) -> None:
@@ -156,6 +159,8 @@ class Server:
         self._closed = True
 
         with ExitStack() as stack:
+            # Runs last, so `wait()` returns once the port is free.
+            stack.callback(self._wake.set)
             stack.callback(self._claimed.close)
             stack.callback(self._reloader.close)
 
@@ -184,6 +189,25 @@ class Server:
     def url(self) -> str:
         """URL of the served directory."""
         return f"http://localhost:{self._port}/"
+
+    def wait(self) -> None:
+        """
+        Wait until the server is closed, or watching fails.
+
+        Raises:
+            OSError: When watching fails.
+            RuntimeError:
+                - When watching fails.
+                - When the server hasn't been entered.
+        """
+        if not self._served and not self._closed:
+            raise RuntimeError("A server can't be waited on before it's entered")
+
+        self._wake.wait()
+
+        if self._watch_error is not None:
+            # Without a traceback, so that raising again doesn't extend it.
+            raise self._watch_error.with_traceback(None)
 
     def _changes(self) -> Generator[bool]:
         """
@@ -251,10 +275,18 @@ class Server:
         self,
         changes: Iterable[bool],
     ) -> None:
-        """Reload every open HTML page each time `changes` yields that something did."""
-        for changed in changes:
-            if changed:
-                self._reloader.reload()
+        """
+        Reload every open HTML page each time `changes` yields that something did, until
+        watching stops or fails.
+        """
+        try:
+            for changed in changes:
+                if changed:
+                    self._reloader.reload()
+
+        except Exception as ex:
+            self._watch_error = ex
+            self._wake.set()
 
 
 def _status(path: Path) -> stat_result | None:

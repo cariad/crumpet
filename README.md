@@ -71,7 +71,7 @@ Pass `watch=True` to reload open HTML pages whenever anything in the directory c
 
 ```python
 with Server("public", port=8001, watch=True) as server:
-    ...
+    server.wait()
 ```
 
 ## Related packages

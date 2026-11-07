@@ -2,7 +2,7 @@ from contextlib import suppress
 from functools import partial
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from socket import SHUT_RDWR, getfqdn, socket
+from socket import SHUT_RDWR, socket
 from typing import Any
 from weakref import WeakSet
 
@@ -44,11 +44,6 @@ class Listener(ThreadingHTTPServer):
         # claimed.
         self.socket.close()
         self.socket = sock
-
-        # Name the server as `HTTPServer.server_bind` would, without binding again.
-        host, port = sock.getsockname()[:2]
-        self.server_name = getfqdn(host)
-        self.server_port = port
 
         self.server_activate()
 

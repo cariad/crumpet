@@ -1,7 +1,6 @@
 import sys
 from argparse import ArgumentParser
 from collections.abc import Sequence
-from time import sleep
 from typing import cast
 
 from notwork import PortInUseError, check_port_is_in_range
@@ -90,12 +89,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 file=sys.stderr,
             )
 
-            # Unlike waiting on a lock, `sleep` is interrupted by Ctrl+C on Windows too.
-            while True:
-                sleep(60)
+            server.wait()
 
     except KeyboardInterrupt:
         return 130
 
-    except OSError as ex:
+    except (OSError, RuntimeError) as ex:
         return _error(f"Can't watch '{args.directory}': {ex}")
+
+    # Nothing closes the server while it waits.
+    return 0  # pragma: no cover
