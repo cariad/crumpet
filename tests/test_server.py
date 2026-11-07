@@ -748,6 +748,48 @@ def test_server_reloads_once_per_replacement(
     assert result == expect
 
 
+def test_server_reloads_pages_that_load_more_html(
+    browser_page: Page,
+    events_opened: Event,
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that a page that loads more HTML with a script, more times than browsers
+    allow connections to a server, reloads without its requests stalling.
+    """
+    (tmp_path / "index.html").write_text(
+        "<script>\n"
+        "  async function loadMore() {\n"
+        "    for (let i = 0; i < 10; i++) {\n"
+        '      const response = await fetch("more.html", {\n'
+        "        signal: AbortSignal.timeout(5000),\n"
+        "      });\n"
+        "      const html = await response.text();\n"
+        "      const more = document.createRange().createContextualFragment(html);\n"
+        "      document.body.append(more);\n"
+        "    }\n"
+        "  }\n"
+        "</script>\n",
+    )
+
+    (tmp_path / "more.html").write_text("<p>More</p>")
+
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
+        browser_page.goto(server.url)
+        browser_page.evaluate("loadMore()")
+        result = reloads(
+            browser_page,
+            server,
+            events_opened,
+        )
+
+    assert result
+
+
 def test_server_reloads_pages_with_strict_csp(
     browser_page: Page,
     events_opened: Event,

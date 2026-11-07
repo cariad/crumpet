@@ -140,9 +140,13 @@ class Handler(SimpleHTTPRequestHandler):
         """Send a header, counting the reload script in an HTML body's length."""
         keyword_lower = keyword.lower()
 
-        # Errors write their HTML bodies directly, without the script.
+        # Errors write their HTML bodies directly, without the script. HTML that scripts
+        # fetch goes into pages that already have it.
         if self._ok and keyword_lower == "content-type":
-            self._html = value.partition(";")[0].strip().lower() == "text/html"
+            self._html = (
+                value.partition(";")[0].strip().lower() == "text/html"
+                and self.headers.get("Sec-Fetch-Dest") != "empty"
+            )
 
         if self._html and keyword_lower == "content-length":
             value = str(int(value) + len(self._script_tag()))
