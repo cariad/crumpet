@@ -401,55 +401,6 @@ def test_main_serves_until_ctrl_c(
     ).close()
 
 
-_RUN_ON_POSIX = """
-import os
-import signal
-import socket
-import sys
-import threading
-import time
-import traceback
-
-# Handle Ctrl+C even if the test runner ignores or blocks it.
-signal.signal(signal.SIGINT, signal.default_int_handler)
-signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT})
-
-# TEMPORARY: times each name lookup, and shows where the command is stuck in CI
-# before the test kills it. Patched before importing crumpet, which imports it.
-lookups = []
-real_getfqdn = socket.getfqdn
-
-def timed_getfqdn(name=""):
-    lookup = [name, None]
-    lookups.append(lookup)
-    start = time.monotonic()
-    result = real_getfqdn(name)
-    lookup[1] = round(time.monotonic() - start, 2)
-    return result
-
-socket.getfqdn = timed_getfqdn
-
-def report_if_stuck():
-    time.sleep(20)
-    names = {thread.ident: thread.name for thread in threading.enumerate()}
-    report = [f"STUCK: getfqdn (name, seconds or None if unfinished): {lookups}\\n"]
-
-    for ident, frame in sys._current_frames().items():
-        report.append(f"Thread {names.get(ident, ident)}:\\n")
-        report.extend(traceback.format_stack(frame))
-
-    print("".join(report), end="", file=sys.stderr, flush=True)
-    os._exit(1)
-
-threading.Thread(target=report_if_stuck, daemon=True).start()
-
-from crumpet._main import main
-
-sys.exit(main())
-"""
-"""Runs the command."""
-
-
 _RUN_THEN_PRESS_CTRL_C_ON_WINDOWS = """
 import ctypes
 import sys
@@ -540,7 +491,7 @@ def test_main_stops_on_ctrl_c_on_posix(
 ) -> None:
     """Assert that a real Ctrl+C stops the command while it waits, on POSIX."""
     _assert_ctrl_c_stops(
-        ["-c", _RUN_ON_POSIX],
+        ["-m", "crumpet"],
         free_port,
         tmp_path,
         lambda process: process.send_signal(SIGINT),
