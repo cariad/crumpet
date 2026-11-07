@@ -77,5 +77,8 @@ jobs:
           cache: false  # Restored tools aren't verified, so don't cache them
           version: 2026.10.11
 
+      - name: Install the browser
+        run: mise run test:browser --with-deps
+
       - name: Run the tests
         run: mise run test

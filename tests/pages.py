@@ -1,7 +1,13 @@
 from collections.abc import Generator
 from contextlib import AbstractContextManager, closing, contextmanager
 from http.client import HTTPConnection, HTTPResponse
+from threading import Event
 from urllib.parse import urljoin, urlsplit
+
+from playwright.sync_api import Page
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+from crumpet import Server
 
 
 @contextmanager
@@ -33,6 +39,24 @@ def next_event(page: HTTPResponse) -> bytes:
 def open_page(url: str) -> AbstractContextManager[HTTPResponse]:
     """Connect to the server at `url` as an open page does, and yield its events."""
     return get(urljoin(url, "/__crumpet__/events"))
+
+
+def reloads(page: Page, server: Server, events_opened: Event) -> bool:
+    """
+    Reload `server`'s pages once `page` opens its event stream, and return whether
+    `page` reloaded.
+    """
+    if not events_opened.wait(5):
+        return False
+
+    try:
+        with page.expect_event("load", timeout=5000):
+            server.reload()
+
+    except PlaywrightTimeoutError:
+        return False
+
+    return True
 
 
 def settle(page: HTTPResponse) -> None:

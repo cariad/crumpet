@@ -54,6 +54,10 @@ run = "zizmor --strict-collection ."
 description = "Run the tests"
 run = "uv run --locked --no-default-groups --group test pytest"
 
+[tasks."test:browser"]
+description = "Install the browser that the tests reload pages in"
+run = "uv run --locked --only-group browser playwright install --no-shell chromium"
+
 # Check for updates: mise outdated --bump
 [tools]
 editorconfig-checker = "4.0.2"  # Lint files against .editorconfig
