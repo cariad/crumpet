@@ -30,8 +30,8 @@ _HEARTBEAT = 1
 # A page's script names the reloads before it was served, and the stream starts with
 # the reloads so far, so a page that was still loading reloads if it missed one.
 #
-# A restarted server counts from 0 again, so a page counted past the stream is taken
-# as up to date.
+# Both name the server's run too, as the stream's event IDs, so a page from an earlier
+# run reloads once a new one starts.
 _SCRIPTS = {
     # URLs are relative to the script, since a page's <base> can lead elsewhere.
     #
@@ -39,23 +39,27 @@ _SCRIPTS = {
     _SCRIPT_PATH: (
         "{\n"
         "  const src = new URL(document.currentScript.src);\n"
-        '  let served = Number(src.searchParams.get("reloads"));\n'
+        "  const page = {\n"
+        '    run: src.searchParams.get("run"),\n'
+        '    served: Number(src.searchParams.get("reloads")),\n'
+        "  };\n"
         '  if (typeof SharedWorker === "function") {\n'
         f'    const url = new URL("{_WORKER_PATH}", src);\n'
-        '    const port = new SharedWorker(url, "reloads").port;\n'
+        '    const port = new SharedWorker(url, "runs").port;\n'
         "    port.onmessage = () => location.reload();\n"
-        "    port.postMessage(served);\n"
+        "    port.postMessage(page);\n"
         '    addEventListener("pagehide", () => port.postMessage(false));\n'
         '    addEventListener("pageshow", (event) => {\n'
-        "      if (event.persisted) port.postMessage(served);\n"
+        "      if (event.persisted) port.postMessage(page);\n"
         "    });\n"
         "  } else {\n"
         f'    const url = new URL("{_EVENTS_PATH}", src);\n'
         "    const events = new EventSource(url);\n"
         "    events.onmessage = (event) => {\n"
-        "      const reloads = Number(event.data);\n"
-        "      if (served < reloads) location.reload();\n"
-        "      else served = reloads;\n"
+        "      const run = event.lastEventId;\n"
+        "      if (run !== page.run || page.served < Number(event.data)) {\n"
+        "        location.reload();\n"
+        "      }\n"
         "    };\n"
         "  }\n"
         "}\n"
@@ -64,29 +68,31 @@ _SCRIPTS = {
     # from the back/forward cache.
     #
     # The stream opens once a page connects, so no reload arrives with no page to tell.
-    # Its count is forgotten when it drops, since the server may have restarted.
+    # Its run is forgotten when it drops, since the server may have restarted.
     _WORKER_PATH: (
         "const pages = new Map();\n"
         "let events = null;\n"
+        "let run = null;\n"
         "let reloads = null;\n"
+        "const outdated = (page) =>\n"
+        "  run !== null && (page.run !== run || page.served < reloads);\n"
         "onconnect = (event) => {\n"
         "  const port = event.ports[0];\n"
         "  port.onmessage = ({ data }) => {\n"
         "    if (data === false) return pages.delete(port);\n"
-        "    if (reloads !== null) data = Math.min(data, reloads);\n"
         "    pages.set(port, data);\n"
-        "    if (data < reloads) port.postMessage(null);\n"
+        "    if (outdated(data)) port.postMessage(null);\n"
         "  };\n"
         "  if (events) return;\n"
         f'  events = new EventSource("{_EVENTS_PATH}");\n'
         "  events.onerror = () => {\n"
-        "    reloads = null;\n"
+        "    run = null;\n"
         "  };\n"
         "  events.onmessage = (event) => {\n"
+        "    run = event.lastEventId;\n"
         "    reloads = Number(event.data);\n"
-        "    for (const [port, served] of pages) {\n"
-        "      if (served < reloads) port.postMessage(null);\n"
-        "      else pages.set(port, reloads);\n"
+        "    for (const [port, page] of pages) {\n"
+        "      if (outdated(page)) port.postMessage(null);\n"
         "    }\n"
         "  };\n"
         "};\n"
@@ -220,12 +226,13 @@ class Handler(SimpleHTTPRequestHandler):
         """The tag that adds the reload script to an HTML body."""
         # Absolute, since a page's <base> can lead elsewhere.
         host = self.headers.get("Host")
-        path = f"{_SCRIPT_PATH}?reloads={self._served}"
+        path = f"{_SCRIPT_PATH}?reloads={self._served}&run={self._reloader.run}"
         src = f"http://{host}{path}" if host else path
         return f'<script src="{escape(src)}"></script>'.encode()
 
     def _send_events(self) -> None:
         """Send the reloads so far, then again each time pages reload, until stopped."""
+        run = self._reloader.run
         seen = self._reloader.reloads
 
         self.send_response(HTTPStatus.OK)
@@ -234,11 +241,13 @@ class Handler(SimpleHTTPRequestHandler):
 
         # The page has gone.
         with suppress(OSError):
-            self.wfile.write(f"data: {seen}\n\n".encode())
+            self.wfile.write(f"data: {seen}\nid: {run}\n\n".encode())
 
             while (reloads := self._reloader.wait(seen, _HEARTBEAT)) is not None:
                 self.wfile.write(
-                    f"data: {reloads}\n\n".encode() if reloads != seen else b":\n\n",
+                    f"data: {reloads}\nid: {run}\n\n".encode()
+                    if reloads != seen
+                    else b":\n\n",
                 )
 
                 seen = reloads
