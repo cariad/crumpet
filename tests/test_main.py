@@ -401,6 +401,19 @@ def test_main_serves_until_ctrl_c(
     ).close()
 
 
+_RUN_ON_POSIX = """
+import signal
+import sys
+
+from crumpet._main import main
+
+# Handle Ctrl+C even if the test runner ignores it.
+signal.signal(signal.SIGINT, signal.default_int_handler)
+sys.exit(main())
+"""
+"""Runs the command."""
+
+
 _RUN_THEN_PRESS_CTRL_C_ON_WINDOWS = """
 import ctypes
 import sys
@@ -494,7 +507,7 @@ def test_main_stops_on_ctrl_c_on_posix(
 ) -> None:
     """Assert that a real Ctrl+C stops the command while it waits, on POSIX."""
     _assert_ctrl_c_stops(
-        ["-m", "crumpet"],
+        ["-c", _RUN_ON_POSIX],
         free_port,
         tmp_path,
         lambda process: process.send_signal(SIGINT),

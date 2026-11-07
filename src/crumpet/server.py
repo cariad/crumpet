@@ -203,10 +203,7 @@ class Server:
         if not self._served and not self._closed:
             raise RuntimeError("A server can't be waited on before it's entered")
 
-        # In steps, since a signal delivered to another thread can't interrupt an
-        # endless wait.
-        while not self._wake.wait(_INTERVAL / 1000):
-            pass
+        self._wake.wait()
 
         if self._watch_error is not None:
             # Without a traceback, so that raising again doesn't extend it.
