@@ -18,11 +18,32 @@ _PREFIX = "/__crumpet__/"
 
 _EVENTS_PATH = _PREFIX + "events"
 _SCRIPT_PATH = _PREFIX + "reload.js"
+_WORKER_PATH = _PREFIX + "worker.js"
 
 # Seconds between heartbeats, which find out when a page has gone.
 _HEARTBEAT = 1
 
-_SCRIPT = f'new EventSource("{_EVENTS_PATH}").onmessage = () => location.reload();\n'
+# Pages share one worker's event stream, since browsers allow only six connections
+# to a server. Chrome on Android has no shared workers.
+_SCRIPTS = {
+    _SCRIPT_PATH: (
+        'if (typeof SharedWorker === "function") {\n'
+        f'  new SharedWorker("{_WORKER_PATH}")'
+        ".port.onmessage = () => location.reload();\n"
+        "} else {\n"
+        f'  new EventSource("{_EVENTS_PATH}").onmessage = () => location.reload();\n'
+        "}\n"
+    ),
+    # Every page reloads and connects again, so each reload forgets the old ones.
+    _WORKER_PATH: (
+        "const ports = [];\n"
+        "onconnect = (event) => ports.push(event.ports[0]);\n"
+        f'new EventSource("{_EVENTS_PATH}").onmessage = () => {{\n'
+        "  for (const port of ports.splice(0)) port.postMessage(null);\n"
+        "};\n"
+    ),
+}
+
 _SCRIPT_TAG = f'<script src="{_SCRIPT_PATH}"></script>'.encode()
 
 
@@ -80,8 +101,8 @@ class Handler(SimpleHTTPRequestHandler):
         """Send the response's status and headers, and return its body."""
         path = urlsplit(self.path).path
 
-        if path == _SCRIPT_PATH:
-            body = _SCRIPT.encode()
+        if script := _SCRIPTS.get(path):
+            body = script.encode()
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-type", "text/javascript")
             self.send_header("Content-Length", str(len(body)))

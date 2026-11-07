@@ -587,16 +587,43 @@ def test_server_serves_wherever_localhost_leads(
     assert result == expect
 
 
-def test_server_serves_reload_script(
+@mark.parametrize(
+    ("path", "body"),
+    [
+        param(
+            "reload.js",
+            b'if (typeof SharedWorker === "function") {\n'
+            b'  new SharedWorker("/__crumpet__/worker.js")'
+            b".port.onmessage = () => location.reload();\n"
+            b"} else {\n"
+            b'  new EventSource("/__crumpet__/events")'
+            b".onmessage = () => location.reload();\n"
+            b"}\n",
+            id="reload",
+        ),
+        param(
+            "worker.js",
+            b"const ports = [];\n"
+            b"onconnect = (event) => ports.push(event.ports[0]);\n"
+            b'new EventSource("/__crumpet__/events").onmessage = () => {\n'
+            b"  for (const port of ports.splice(0)) port.postMessage(null);\n"
+            b"};\n",
+            id="worker",
+        ),
+    ],
+)
+def test_server_serves_reload_scripts(
+    body: bytes,
     free_port: int,
+    path: str,
     tmp_path: Path,
 ) -> None:
-    """Assert that a server serves the reload script that HTML files load."""
+    """Assert that a server serves the scripts that reload HTML files."""
     with Server(
         tmp_path,
         port=free_port,
     ) as server:
-        response = _get(server.url + "__crumpet__/reload.js")
+        response = _get(server.url + "__crumpet__/" + path)
 
     result = (
         response.status,
@@ -607,8 +634,7 @@ def test_server_serves_reload_script(
     expect = (
         200,
         "text/javascript",
-        b'new EventSource("/__crumpet__/events")'
-        b".onmessage = () => location.reload();\n",
+        body,
     )
 
     assert result == expect
