@@ -109,7 +109,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             return BytesIO(body)
 
-        if path.startswith(_PREFIX):
+        if self._reserved():
             self.send_error(HTTPStatus.NOT_FOUND, "File not found")
             return None
 
@@ -137,6 +137,18 @@ class Handler(SimpleHTTPRequestHandler):
         self._html = False
         self._ok = code == HTTPStatus.OK
         super().send_response(code, message)
+
+    def _reserved(self) -> bool:
+        """Whether the request's file is under the reserved directory."""
+        # Compared as files, since paths can reach the same one by other case or links.
+        reserved = Path(self.directory, _PREFIX.strip("/"))
+        path = Path(self.translate_path(self.path)).resolve()
+
+        # A missing file can't be served anyway.
+        with suppress(OSError):
+            return any(p.samefile(reserved) for p in (path, *path.parents))
+
+        return False
 
     def _send_events(self) -> None:
         """Send an event each time pages reload, until the server stops."""

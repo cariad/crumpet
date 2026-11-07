@@ -432,19 +432,31 @@ def test_server_raises_for_port_out_of_range(
     assert result == expect
 
 
+@mark.parametrize(
+    "path",
+    [
+        "__crumpet__/notes.txt",
+        "%5f_crumpet__/notes.txt",
+        "docs/../__crumpet__/notes.txt",
+        "__CRUMPET__/notes.txt",
+        "link/notes.txt",
+    ],
+)
 def test_server_refuses_reserved_paths(
     free_port: int,
+    path: str,
     tmp_path: Path,
 ) -> None:
     """Assert that a file under the reserved prefix isn't served."""
     (tmp_path / "__crumpet__").mkdir()
     (tmp_path / "__crumpet__" / "notes.txt").write_text("Notes")
+    (tmp_path / "link").symlink_to("__crumpet__")
 
     with Server(
         tmp_path,
         port=free_port,
     ) as server:
-        result = _get(server.url + "__crumpet__/notes.txt").status
+        result = _get(server.url + path).status
 
     expect = 404
 
