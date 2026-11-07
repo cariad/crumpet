@@ -25,6 +25,9 @@ from pytest import MonkeyPatch, mark, param, raises
 from crumpet import Server
 from tests.marks import needs_dual_stack, needs_ipv6
 
+# Sent with every response.
+_NO_STORE = ("Cache-Control", "no-store")
+
 
 class _Response(NamedTuple):
     """A response, without its date."""
@@ -206,7 +209,8 @@ def test_server_adds_reload_script_to_html(
                 length if name == "Content-Length" else value,
             )
             for name, value in python.headers
-        ],
+        ]
+        + [_NO_STORE],
         body=python.body + script,
     )
 
@@ -570,7 +574,11 @@ def test_server_serves_like_python(
         _serve_like_python(served) as python_url,
     ):
         result = _get(server.url + path)
-        expect = _get(python_url + path)
+        python = _get(python_url + path)
+
+    expect = python._replace(
+        headers=[*python.headers, _NO_STORE],
+    )
 
     assert result == expect
 
@@ -649,15 +657,19 @@ def test_server_serves_reload_scripts(
     ) as server:
         response = _get(server.url + "__crumpet__/" + path)
 
+    headers = dict(response.headers)
+
     result = (
         response.status,
-        dict(response.headers)["Content-type"],
+        headers["Content-type"],
+        headers["Cache-Control"],
         response.body,
     )
 
     expect = (
         200,
         "text/javascript",
+        "no-store",
         body,
     )
 
