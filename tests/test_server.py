@@ -1,8 +1,9 @@
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import closing, contextmanager
 from functools import partial
 from http.client import HTTPConnection, HTTPResponse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from os import utime
 from pathlib import Path
 from socket import (
     AF_INET,
@@ -100,6 +101,13 @@ def _listen(
         yield sock.getsockname()[1]
 
 
+def _next_event(page: HTTPResponse) -> bytes:
+    """Read the next event or heartbeat that `page` is sent, without its blank line."""
+    line = page.readline()
+    page.readline()
+    return line
+
+
 @contextmanager
 def _open_page(url: str) -> Generator[HTTPResponse]:
     """Connect to the server at `url` as an open page does, and yield its events."""
@@ -117,6 +125,15 @@ def _open_page(url: str) -> Generator[HTTPResponse]:
         )
 
         yield connection.getresponse()
+
+
+def _settle(page: HTTPResponse) -> None:
+    """
+    Wait for a heartbeat on `page`, so that changes made before watching started can't
+    be mistaken for later ones. macOS can report them once watching has started.
+    """
+    while _next_event(page) != b":\n":
+        pass
 
 
 @contextmanager
@@ -217,6 +234,26 @@ def test_server_adds_reload_script_to_html(
     assert result == expect
 
 
+def test_server_does_not_watch_by_default(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """Assert that a server doesn't reload open pages when a file changes by default."""
+    with (
+        Server(
+            tmp_path,
+            port=free_port,
+        ) as server,
+        _open_page(server.url) as page,
+    ):
+        (tmp_path / "notes.txt").write_text("Notes")
+        result = _next_event(page)
+
+    expect = b":\n"
+
+    assert result == expect
+
+
 def test_server_frees_port_when_closed(
     free_port: int,
     tmp_path: Path,
@@ -294,6 +331,42 @@ def test_server_frees_port_when_leaving(
             port=free_port,
         ) as server,
     ):
+        result = _get(server.url).status
+
+    expect = 200
+
+    assert result == expect
+
+
+def test_server_frees_port_when_watching_fails(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that a server that can't start watching frees its port, so that another
+    server can start on it straight away.
+    """
+    public = tmp_path / "public"
+    public.mkdir()
+
+    server = Server(
+        public,
+        port=free_port,
+        watch=True,
+    )
+
+    public.rmdir()
+
+    with (
+        raises(FileNotFoundError),
+        server,
+    ):
+        pass
+
+    with Server(
+        tmp_path,
+        port=free_port,
+    ) as server:
         result = _get(server.url).status
 
     expect = 200
@@ -470,19 +543,32 @@ def test_server_refuses_reserved_paths(
     assert result == expect
 
 
+@mark.parametrize(
+    "watch",
+    [
+        False,
+        True,
+    ],
+)
 def test_server_reload_reloads_open_pages(
     free_port: int,
     tmp_path: Path,
+    watch: bool,
 ) -> None:
     """Assert that `reload()` tells every open page to reload."""
     with (
         Server(
             tmp_path,
             port=free_port,
+            watch=watch,
         ) as server,
         _open_page(server.url) as first,
         _open_page(server.url) as second,
     ):
+        if watch:
+            _settle(first)
+            _settle(second)
+
         server.reload()
 
         result = [
@@ -493,6 +579,131 @@ def test_server_reload_reloads_open_pages(
     expect = [
         b"data: reload\n",
         b"data: reload\n",
+    ]
+
+    assert result == expect
+
+
+@mark.parametrize(
+    (
+        "path",
+        "change",
+    ),
+    [
+        # Files
+        (
+            "new.txt",
+            partial(Path.write_text, data="New"),
+        ),
+        (
+            "notes.txt",
+            partial(Path.write_text, data="Changed"),
+        ),
+        (
+            "notes.txt",
+            Path.unlink,
+        ),
+        (
+            "notes.txt",
+            partial(Path.rename, target="renamed.txt"),
+        ),
+        # Directories
+        (
+            "new",
+            Path.mkdir,
+        ),
+        (
+            "docs",
+            partial(utime, times=(0, 0)),
+        ),
+        (
+            "empty",
+            Path.rmdir,
+        ),
+        (
+            "docs",
+            partial(Path.rename, target="renamed"),
+        ),
+        # Deep and hidden
+        (
+            "docs/deep/deeper/deepest.txt",
+            partial(Path.write_text, data="Changed"),
+        ),
+        (
+            ".git/HEAD",
+            partial(Path.write_text, data="Changed"),
+        ),
+    ],
+)
+def test_server_reloads_after_change(
+    change: Callable[[Path], object],
+    free_port: int,
+    monkeypatch: MonkeyPatch,
+    path: str,
+    tmp_path: Path,
+) -> None:
+    """Assert that a watching server reloads every open page after any change."""
+    (tmp_path / "notes.txt").write_text("Notes")
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "docs" / "deep" / "deeper").mkdir(parents=True)
+    (tmp_path / "docs" / "deep" / "deeper" / "deepest.txt").write_text("Deepest")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("Head")
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        Server(
+            tmp_path,
+            port=free_port,
+            watch=True,
+        ) as server,
+        _open_page(server.url) as first,
+        _open_page(server.url) as second,
+    ):
+        _settle(first)
+        _settle(second)
+        change(Path(path))
+
+        result = [
+            _next_event(first),
+            _next_event(second),
+        ]
+
+    expect = [
+        b"data: reload\n",
+        b"data: reload\n",
+    ]
+
+    assert result == expect
+
+
+def test_server_reloads_once_per_burst(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """Assert that a watching server reloads open pages once per burst of changes."""
+    with (
+        Server(
+            tmp_path,
+            port=free_port,
+            watch=True,
+        ) as server,
+        _open_page(server.url) as page,
+    ):
+        _settle(page)
+
+        for index in range(20):
+            (tmp_path / f"{index}.html").write_text("Built")
+
+        # A second reload would come before the next heartbeat.
+        result = [
+            _next_event(page),
+            _next_event(page),
+        ]
+
+    expect = [
+        b"data: reload\n",
+        b":\n",
     ]
 
     assert result == expect

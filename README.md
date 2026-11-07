@@ -67,6 +67,13 @@ with Server("public", port=8001) as server:
     server.reload()  # Reload every open HTML page
 ```
 
+Pass `watch=True` to reload open HTML pages whenever anything in the directory changes:
+
+```python
+with Server("public", port=8001, watch=True) as server:
+    ...
+```
+
 ## Related packages
 
 Crumpet is built on these other packages that I wrote:
