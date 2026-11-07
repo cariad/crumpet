@@ -26,38 +26,68 @@ _HEARTBEAT = 1
 
 # Pages share one worker's event stream, since browsers allow only six connections
 # to a server. Chrome on Android has no shared workers.
+#
+# A page's script names the reloads before it was served, and the stream starts with
+# the reloads so far, so a page that was still loading reloads if it missed one.
+#
+# A restarted server counts from 0 again, so a page counted past the stream is taken
+# as up to date.
 _SCRIPTS = {
     # URLs are relative to the script, since a page's <base> can lead elsewhere.
+    #
+    # The worker is named apart from ones that older versions left running.
     _SCRIPT_PATH: (
-        'if (typeof SharedWorker === "function") {\n'
-        f'  const url = new URL("{_WORKER_PATH}", document.currentScript.src);\n'
-        "  const port = new SharedWorker(url).port;\n"
-        "  port.onmessage = () => location.reload();\n"
-        '  addEventListener("pagehide", () => port.postMessage(false));\n'
-        '  addEventListener("pageshow", () => port.postMessage(true));\n'
-        "} else {\n"
-        f'  const url = new URL("{_EVENTS_PATH}", document.currentScript.src);\n'
-        "  new EventSource(url).onmessage = () => location.reload();\n"
+        "{\n"
+        "  const src = new URL(document.currentScript.src);\n"
+        '  let served = Number(src.searchParams.get("reloads"));\n'
+        '  if (typeof SharedWorker === "function") {\n'
+        f'    const url = new URL("{_WORKER_PATH}", src);\n'
+        '    const port = new SharedWorker(url, "reloads").port;\n'
+        "    port.onmessage = () => location.reload();\n"
+        "    port.postMessage(served);\n"
+        '    addEventListener("pagehide", () => port.postMessage(false));\n'
+        '    addEventListener("pageshow", (event) => {\n'
+        "      if (event.persisted) port.postMessage(served);\n"
+        "    });\n"
+        "  } else {\n"
+        f'    const url = new URL("{_EVENTS_PATH}", src);\n'
+        "    const events = new EventSource(url);\n"
+        "    events.onmessage = (event) => {\n"
+        "      const reloads = Number(event.data);\n"
+        "      if (served < reloads) location.reload();\n"
+        "      else served = reloads;\n"
+        "    };\n"
+        "  }\n"
         "}\n"
     ),
     # Pages say whether they're open, since one can cancel its reload or come back
     # from the back/forward cache.
     #
     # The stream opens once a page connects, so no reload arrives with no page to tell.
+    # Its count is forgotten when it drops, since the server may have restarted.
     _WORKER_PATH: (
-        "const ports = new Set();\n"
+        "const pages = new Map();\n"
         "let events = null;\n"
+        "let reloads = null;\n"
         "onconnect = (event) => {\n"
         "  const port = event.ports[0];\n"
-        "  ports.add(port);\n"
-        "  port.onmessage = (message) => {\n"
-        "    if (message.data) ports.add(port);\n"
-        "    else ports.delete(port);\n"
+        "  port.onmessage = ({ data }) => {\n"
+        "    if (data === false) return pages.delete(port);\n"
+        "    if (reloads !== null) data = Math.min(data, reloads);\n"
+        "    pages.set(port, data);\n"
+        "    if (data < reloads) port.postMessage(null);\n"
         "  };\n"
         "  if (events) return;\n"
         f'  events = new EventSource("{_EVENTS_PATH}");\n'
-        "  events.onmessage = () => {\n"
-        "    for (const port of ports) port.postMessage(null);\n"
+        "  events.onerror = () => {\n"
+        "    reloads = null;\n"
+        "  };\n"
+        "  events.onmessage = (event) => {\n"
+        "    reloads = Number(event.data);\n"
+        "    for (const [port, served] of pages) {\n"
+        "      if (served < reloads) port.postMessage(null);\n"
+        "      else pages.set(port, reloads);\n"
+        "    }\n"
         "  };\n"
         "};\n"
     ),
@@ -88,6 +118,7 @@ class Handler(SimpleHTTPRequestHandler):
         self._html = False
         self._ok = False
         self._reloader = reloader
+        self._served = 0
 
         super().__init__(
             request,
@@ -139,6 +170,9 @@ class Handler(SimpleHTTPRequestHandler):
         # within one could be reported unchanged.
         del self.headers["If-Modified-Since"]
 
+        # Counted before the file is read, so a reload while it's read isn't missed.
+        self._served = self._reloader.reloads
+
         return super().send_head()
 
     def send_header(self, keyword: str, value: str) -> None:
@@ -186,11 +220,12 @@ class Handler(SimpleHTTPRequestHandler):
         """The tag that adds the reload script to an HTML body."""
         # Absolute, since a page's <base> can lead elsewhere.
         host = self.headers.get("Host")
-        src = f"http://{host}{_SCRIPT_PATH}" if host else _SCRIPT_PATH
+        path = f"{_SCRIPT_PATH}?reloads={self._served}"
+        src = f"http://{host}{path}" if host else path
         return f'<script src="{escape(src)}"></script>'.encode()
 
     def _send_events(self) -> None:
-        """Send an event each time pages reload, until the server stops."""
+        """Send the reloads so far, then again each time pages reload, until stopped."""
         seen = self._reloader.reloads
 
         self.send_response(HTTPStatus.OK)
@@ -199,6 +234,11 @@ class Handler(SimpleHTTPRequestHandler):
 
         # The page has gone.
         with suppress(OSError):
+            self.wfile.write(f"data: {seen}\n\n".encode())
+
             while (reloads := self._reloader.wait(seen, _HEARTBEAT)) is not None:
-                self.wfile.write(b"data: reload\n\n" if reloads != seen else b":\n\n")
+                self.wfile.write(
+                    f"data: {reloads}\n\n".encode() if reloads != seen else b":\n\n",
+                )
+
                 seen = reloads

@@ -1,5 +1,5 @@
 from collections.abc import Generator
-from contextlib import AbstractContextManager, closing, contextmanager
+from contextlib import closing, contextmanager
 from http.client import HTTPConnection, HTTPResponse
 from threading import Event
 from urllib.parse import urljoin, urlsplit
@@ -30,15 +30,30 @@ def get(url: str) -> Generator[HTTPResponse]:
 
 
 def next_event(page: HTTPResponse) -> bytes:
-    """Read the next event or heartbeat that `page` is sent, without its blank line."""
+    """
+    Read the next event or heartbeat that `page` is sent, and return its top line
+    without the count of reloads, which changes made before watching can raise.
+    """
     line = page.readline()
-    page.readline()
-    return line
+
+    while page.readline() not in (b"\n", b""):
+        pass
+
+    return line.translate(
+        None,
+        b"0123456789",
+    )
 
 
-def open_page(url: str) -> AbstractContextManager[HTTPResponse]:
-    """Connect to the server at `url` as an open page does, and yield its events."""
-    return get(urljoin(url, "/__crumpet__/events"))
+@contextmanager
+def open_page(url: str) -> Generator[HTTPResponse]:
+    """
+    Connect to the server at `url` as an open page does, and yield its events after
+    the first, which counts the reloads so far.
+    """
+    with get(urljoin(url, "/__crumpet__/events")) as page:
+        next_event(page)
+        yield page
 
 
 def reloads(page: Page, server: Server, events_opened: Event) -> bool:
