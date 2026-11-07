@@ -748,15 +748,30 @@ def test_server_reloads_once_per_replacement(
     assert result == expect
 
 
+@mark.parametrize(
+    "init_script",
+    [
+        param(
+            "",
+            id="shared-worker",
+        ),
+        param(
+            "delete window.SharedWorker;",
+            id="no-shared-worker",
+        ),
+    ],
+)
 def test_server_reloads_pages_that_load_more_html(
     browser_page: Page,
     events_opened: Event,
     free_port: int,
+    init_script: str,
     tmp_path: Path,
 ) -> None:
     """
     Assert that a page that loads more HTML with a script, more times than browsers
-    allow connections to a server, reloads without its requests stalling.
+    allow connections to a server, reloads without its requests stalling, with or
+    without shared workers.
     """
     (tmp_path / "index.html").write_text(
         "<script>\n"
@@ -779,6 +794,7 @@ def test_server_reloads_pages_that_load_more_html(
         tmp_path,
         port=free_port,
     ) as server:
+        browser_page.add_init_script(init_script)
         browser_page.goto(server.url)
         browser_page.evaluate("loadMore()")
         result = reloads(
