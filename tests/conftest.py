@@ -2,7 +2,7 @@ from collections.abc import Generator
 from pathlib import Path
 from socket import AF_INET, SOCK_STREAM, socket
 
-from pytest import fixture
+from pytest import FixtureRequest, MonkeyPatch, fixture
 
 
 @fixture
@@ -23,6 +23,36 @@ def free_port() -> int:
         port: int = sock.getsockname()[1]
 
     return port
+
+
+@fixture
+def watching_fails_after_start(
+    monkeypatch: MonkeyPatch,
+    request: FixtureRequest,
+) -> Exception:
+    """
+    Make watching start, then fail with the error that the test parametrizes, or an
+    `OSError`.
+    """
+    error: Exception = getattr(
+        request,
+        "param",
+        OSError("OS file watch limit reached"),
+    )
+
+    def start_then_fail(
+        *_: object,
+        **__: object,
+    ) -> Generator[set[object]]:
+        yield set()
+        raise error
+
+    monkeypatch.setattr(
+        "crumpet.server.watchfiles.watch",
+        start_then_fail,
+    )
+
+    return error
 
 
 @fixture

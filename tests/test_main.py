@@ -71,7 +71,7 @@ def test_main_reloads_after_change(
     """Assert that the command reloads every open page after a change."""
     events: list[bytes] = []
 
-    def change_then_press_ctrl_c(_: float) -> None:
+    def change_then_press_ctrl_c(_: Server) -> None:
         with open_page(f"http://localhost:{free_port}/") as page:
             settle(page)
             (tmp_path / "index.html").write_text("Built")
@@ -80,7 +80,8 @@ def test_main_reloads_after_change(
         raise KeyboardInterrupt
 
     monkeypatch.setattr(
-        "crumpet._main.sleep",
+        Server,
+        "wait",
         change_then_press_ctrl_c,
     )
 
@@ -264,6 +265,56 @@ def test_main_reports_watch_failure(
     assert result == expect
 
 
+@mark.parametrize(
+    "watching_fails_after_start",
+    [
+        OSError("OS file watch limit reached"),
+        RuntimeError("watch thread unexpectedly received a signal"),
+    ],
+    indirect=True,
+)
+def test_main_reports_watch_failure_after_start(
+    capsys: CaptureFixture[str],
+    free_port: int,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    watching_fails_after_start: Exception,
+) -> None:
+    """
+    Assert that watching that fails after it starts is reported, and that the command
+    stops serving and frees the port.
+    """
+    (tmp_path / "build").mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main(
+        [
+            "build",
+            "--port",
+            str(free_port),
+        ],
+    )
+
+    assert exit_code == 1
+
+    result = capsys.readouterr()
+
+    expect = (
+        "",
+        f"crumpet: Serving 'build' at http://localhost:{free_port}/\n"
+        "crumpet: Press Ctrl+C to stop.\n"
+        f"crumpet: error: Can't watch 'build': {watching_fails_after_start}\n",
+    )
+
+    assert result == expect
+
+    # Raises if the port is still claimed.
+    Server(
+        tmp_path,
+        port=free_port,
+    ).close()
+
+
 def test_main_serves_until_ctrl_c(
     capsys: CaptureFixture[str],
     free_port: int,
@@ -280,7 +331,7 @@ def test_main_serves_until_ctrl_c(
     printed: list[tuple[str, str]] = []
     statuses: list[int] = []
 
-    def press_ctrl_c(_: float) -> None:
+    def press_ctrl_c(_: Server) -> None:
         printed.append(capsys.readouterr())
 
         with urlopen(
@@ -298,7 +349,8 @@ def test_main_serves_until_ctrl_c(
         raise KeyboardInterrupt
 
     monkeypatch.setattr(
-        "crumpet._main.sleep",
+        Server,
+        "wait",
         press_ctrl_c,
     )
 
