@@ -402,14 +402,33 @@ def test_main_serves_until_ctrl_c(
 
 
 _RUN_ON_POSIX = """
+import faulthandler
+import os
 import signal
 import sys
+import threading
+import time
 
 from crumpet._main import main
 
 # Handle Ctrl+C even if the test runner ignores or blocks it.
 signal.signal(signal.SIGINT, signal.default_int_handler)
 signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT})
+
+# TEMPORARY: shows where the command is stuck in CI, before the test kills it.
+def report_if_stuck():
+    time.sleep(20)
+    print(
+        f"STUCK: handler={signal.getsignal(signal.SIGINT)!r}"
+        f" blocked={signal.pthread_sigmask(signal.SIG_BLOCK, [])!r}"
+        f" pending={signal.sigpending()!r}",
+        file=sys.stderr,
+        flush=True,
+    )
+    faulthandler.dump_traceback(all_threads=True)
+    os._exit(1)
+
+threading.Thread(target=report_if_stuck, daemon=True).start()
 sys.exit(main())
 """
 """Runs the command."""
@@ -480,13 +499,10 @@ def _assert_ctrl_c_stops(
         finally:
             timer.cancel()
 
-    exit_code = process.returncode
-
-    assert exit_code == 130
-
-    result = (stdout, started + stopped)
+    result = (process.returncode, stdout, started + stopped)
 
     expect = (
+        130,
         "",
         f"crumpet: Serving 'build' at http://localhost:{free_port}/\n"
         "crumpet: Press Ctrl+C to stop.\n",
