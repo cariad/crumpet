@@ -1,4 +1,5 @@
 from threading import Condition
+from uuid import uuid4
 
 
 class Reloader:
@@ -8,6 +9,9 @@ class Reloader:
         self._closed = False
         self._condition = Condition()
         self._reloads = 0
+
+        self.run = uuid4().hex
+        """ID that pages from an earlier server won't match."""
 
     def close(self) -> None:
         """Stop every page from waiting."""
