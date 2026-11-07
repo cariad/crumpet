@@ -208,10 +208,6 @@ class Server:
                     ),
                 ) as changes:
                     for burst in changes:
-                        # Changes made before watching again were missed.
-                        yield bool(burst) or replaced
-                        replaced = False
-
                         current = _status(self._directory)
                         same = watched and current and samestat(watched, current)
 
@@ -222,7 +218,16 @@ class Server:
                             and (Change.deleted, str(self._directory)) in burst
                         )
 
-                        if not same or deleted:
+                        replacing = not same or deleted
+
+                        # A replacement that's already present is reported once
+                        # watching it starts.
+                        if not (replacing and current):
+                            # Changes made before watching again were missed.
+                            yield bool(burst) or replaced
+                            replaced = False
+
+                        if replacing:
                             break
 
                     else:

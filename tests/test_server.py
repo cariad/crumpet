@@ -704,6 +704,43 @@ def test_server_reloads_once_per_burst(
     assert result == expect
 
 
+def test_server_reloads_once_per_replacement(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that a watching server reloads open pages once when its directory is
+    deleted and created again in one burst.
+    """
+    public = tmp_path / "public"
+    public.mkdir()
+
+    with (
+        Server(
+            public,
+            port=free_port,
+            watch=True,
+        ) as server,
+        open_page(server.url) as page,
+    ):
+        settle(page)
+        rmtree(public)
+        public.mkdir()
+
+        # A second reload would come before the next heartbeat.
+        result = [
+            next_event(page),
+            next_event(page),
+        ]
+
+    expect = [
+        b"data: reload\n",
+        b":\n",
+    ]
+
+    assert result == expect
+
+
 def test_server_raises_when_entered_after_closing(
     free_port: int,
     tmp_path: Path,
