@@ -121,6 +121,7 @@ class Handler(SimpleHTTPRequestHandler):
         directory: Path,
         reloader: Reloader,
     ) -> None:
+        self._directory = directory
         self._html = False
         self._ok = False
         self._reloader = reloader
@@ -167,6 +168,11 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             return BytesIO(body)
+
+        # Followed once, so a symlink changed to lead elsewhere mid-request can't make
+        # the file that's served differ from the one that's checked. A path that can't
+        # be followed is kept, since nothing under it can be served anyway.
+        self.directory = str(self._directory.resolve())
 
         if self._reserved():
             self.send_error(HTTPStatus.NOT_FOUND, "File not found")
