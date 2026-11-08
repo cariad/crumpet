@@ -29,7 +29,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         Exit code.
     """
     parser = ArgumentParser(
-        description="Cosy local HTTP hosting.",
+        description="A cosy web server for local files.",
         prog="crumpet",
     )
 

@@ -49,7 +49,7 @@ dependencies = [
   "rootle>=1.2.0,<2",
   "watchfiles>=1.3.0,<2",
 ]
-description = "A cosy little Python package and command-line tool for serving a directory as a local website"
+description = "A cosy web server for local files"
 dynamic = [
   "version",
 ]

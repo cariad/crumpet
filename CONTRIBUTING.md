@@ -1,5 +1,11 @@
 # Contributing
 
+## Before you start
+
+Ideas, questions and bug reports are always welcome as [issues](https://github.com/cariad/crumpet/issues), even if you don't want to write the code yourself.
+
+If you'd like to make a change, please open an issue first so we can agree on the approach. I'm unlikely to accept a pull request for work that hasn't been discussed.
+
 ## Requirements
 
 - [mise](https://mise.jdx.dev/)

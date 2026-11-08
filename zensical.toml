@@ -3,11 +3,12 @@ copyright = "&copy; 2026 Cariad Eccleston"
 nav = [
   { "Get started" = "index.md" },
   { "Python API" = "api.md" },
+  { "Compared with other tools" = "comparison.md" },
 ]
 repo_name = "cariad/crumpet"
 repo_url = "https://github.com/cariad/crumpet"
 site_author = "Cariad Eccleston"
-site_description = "A cosy little Python package and command-line tool for serving a directory as a local website."
+site_description = "A cosy web server for local files."
 site_name = "crumpet documentation"
 site_url = "https://cariad.github.io/crumpet/"
 strict = true

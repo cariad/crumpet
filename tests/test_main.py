@@ -31,7 +31,7 @@ def test_main_prints_help(capsys: CaptureFixture[str]) -> None:
     expect = (
         "usage: crumpet [-h] [--port PORT] [DIRECTORY]\n"
         "\n"
-        "Cosy local HTTP hosting.\n"
+        "A cosy web server for local files.\n"
         "\n"
         "positional arguments:\n"
         "  DIRECTORY    directory to serve (default: .)\n"
