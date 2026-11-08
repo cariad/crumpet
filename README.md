@@ -1,83 +1,100 @@
-# crumpet
+# Crumpet
 
-Crumpet is a cosy little Python package and command-line tool for serving a directory as a local website.
+[![CI][ci-badge]][ci] [![Coverage][coverage-badge]][coverage]
 
-## Installation
+[ci-badge]: https://github.com/cariad/crumpet/actions/workflows/ci.yml/badge.svg
+[coverage-badge]: https://codecov.io/gh/cariad/crumpet/graph/badge.svg
 
-Crumpet requires Python 3.14 or later, and is tested on Linux, macOS, and Windows.
+[ci]: https://github.com/cariad/crumpet/actions/workflows/ci.yml
+[coverage]: https://codecov.io/gh/cariad/crumpet
 
-Install `crumpet` via your favourite package manager:
+**A cosy web server for local files.**
 
-- ```bash
-  pip install crumpet
-  ```
+Crumpet previews a static site while you build it, and reloads open pages when files change. Run it from the command line, or from inside your own Python program.
 
-- ```bash
-  uv add crumpet
-  ```
+## Quick start
 
-- ```bash
-  poetry add crumpet
-  ```
+```bash
+pip install crumpet
+crumpet ./public
+```
 
-Or run Crumpet without installing, using `pipx`:
+Open <http://localhost:8000/>, and every page reloads whenever anything in the `public` directory changes.
 
-- ```bash
-  pipx run crumpet
-  ```
+Or, serve from your own script, and reload pages when you're ready:
 
-## Running on the command line
+```python
+from pathlib import Path
+
+from crumpet import Server
+
+site = Path("public")
+site.mkdir(exist_ok=True)
+
+with Server(site, port=8000) as server:
+    input(f"Open {server.url}, then press Enter to build: ")
+    (site / "index.html").write_text("<h1>Built</h1>")
+    server.reload()  # The open page reloads, and shows "Built"
+    input("Press Enter to stop: ")
+```
+
+## Features
+
+- **Reloads open pages when files change.** Crumpet waits for a burst of changes to settle, so pages only show the finished build.
+- **Runs inside your program.** Serve in a `with` block, rebuild, and call `server.reload()`.
+- **Works with a strict Content Security Policy.** The reload script loads from the server, not inline.
+- **Lists directories**, like `python -m http.server`, and reloads them too.
+- **Never shows stale files.** Every response is sent with `Cache-Control: no-store`.
+- **Small and typed.** It's built on Python's own `http.server`, checked with strict pyright, and tested on Linux, macOS, and Windows.
+
+See how Crumpet [compares with livereload and `http.server`](https://cariad.github.io/crumpet/comparison/).
+
+## Why NOT use Crumpet?
+
+- **You want to host a public website.** Crumpet is a local development server *only*.
+- **You use Python earlier than 3.14.** Crumpet supports modern Python *only*.
+- **You want efficient replacement of style sheets.** `livereload` is clever about replacing style sheets without reloading pages. Crumpet will just reload the page.
+
+## Usage
+
+### Preview a directory from the command line
 
 ```text
 crumpet [DIRECTORY] [--port PORT]
 ```
 
-- `DIRECTORY` — the directory to serve. Defaults to the current working directory.
-- `PORT` — the port to serve on. Defaults to 8000.
+`DIRECTORY` defaults to the current working directory, and `PORT` to 8000. Crumpet serves until you press Ctrl+C.
 
-So, for example, to serve the current directory at <http://localhost:8000>, just run:
-
-```bash
-crumpet
-```
-
-To serve the `public` subdirectory:
-
-```bash
-crumpet public
-```
-
-To serve the `public` subdirectory on port 8001:
+For example, to preview your `public` subdirectory on port 8001:
 
 ```bash
 crumpet public --port 8001
 ```
 
-Crumpet reloads every open HTML page whenever anything in the directory changes. Press Ctrl+C to stop serving.
+### Preview a directory from a Python script
 
-## Usage as a library
-
-`Server` is a context manager that serves for the duration of the `with` block:
+`watch=True` reloads every open page whenever anything in the directory changes:
 
 ```python
 from crumpet import Server
 
-with Server("public", port=8001) as server:
-    print(server.url)  # http://localhost:8001/
-    print(server.url_for("about.html"))  # http://localhost:8001/about.html
-    server.reload()  # Reload every open HTML page
-```
-
-Pass `watch=True` to reload open HTML pages whenever anything in the directory changes:
-
-```python
 with Server("public", port=8001, watch=True) as server:
-    server.wait()
+    print(f"Serving at {server.url}")
+    server.wait()  # Serve until Ctrl+C
 ```
 
-## Related packages
+## Documentation
 
-Crumpet is built on these other packages that I wrote:
+The full documentation, including the [Python API](https://cariad.github.io/crumpet/api/), is at [cariad.github.io/crumpet](https://cariad.github.io/crumpet/).
 
-- [`notwork`](https://github.com/cariad/notwork) — Python functions for when your network might notwork
-- [`rootle`](https://github.com/cariad/rootle) — Python functions to rootle around in your file system
+## Contributing
+
+Ideas, questions and bug reports are always welcome as [issues](https://github.com/cariad/crumpet/issues), even if you don't want to write the code yourself.
+
+If you'd like to make a change, please open an issue first so we can agree on the approach. I'm unlikely to accept a pull request for work that hasn't been discussed.
+
+AI-assisted contributions are welcome. [CONTRIBUTING.md](https://github.com/cariad/crumpet/blob/main/CONTRIBUTING.md) explains how to set up a development environment with mise, and how to lint and test.
+
+## Licence
+
+MIT. See [LICENSE](https://github.com/cariad/crumpet/blob/main/LICENSE).
