@@ -158,6 +158,65 @@ def test_server_refuses_reserved_paths(
     assert result == expect
 
 
+def test_server_refuses_reserved_paths_where_symlink_leads_now(
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that a file under the reserved prefix isn't served from the directory that a
+    symlink to the served directory was changed to lead to.
+    """
+    before = tmp_path / "before"
+    before.mkdir()
+
+    after = tmp_path / "after"
+    (after / "__crumpet__").mkdir(parents=True)
+    (after / "__crumpet__" / "notes.txt").write_text("Notes")
+    (after / "alias").symlink_to("__crumpet__")
+
+    link = tmp_path / "link"
+    link.symlink_to(before)
+
+    with Server(
+        link,
+        port=free_port,
+    ) as server:
+        link.unlink()
+        link.symlink_to(after)
+
+        result = fetch(server.url + "alias/notes.txt").status
+
+    expect = 404
+
+    assert result == expect
+
+
+def test_server_serves_directory_after_working_directory_changes(
+    free_port: int,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that a server that's given a relative path keeps serving the directory that
+    it led to when the working directory changes.
+    """
+    (tmp_path / "public").mkdir()
+    (tmp_path / "public" / "notes.txt").write_text("Notes")
+    (tmp_path / "elsewhere" / "public").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    with Server(
+        "public",
+        port=free_port,
+    ) as server:
+        monkeypatch.chdir(tmp_path / "elsewhere")
+        result = fetch(server.url + "notes.txt").body
+
+    expect = b"Notes"
+
+    assert result == expect
+
+
 @mark.parametrize(
     "path",
     [
@@ -191,6 +250,56 @@ def test_server_serves_like_python(
 
     expect = python._replace(
         headers=[*python.headers, _NO_STORE],
+    )
+
+    assert result == expect
+
+
+@mark.parametrize(
+    "directory",
+    [
+        # The served directory is the symlink.
+        "link",
+        # A symlink leads to the served directory's parent.
+        "link/site",
+    ],
+)
+def test_server_serves_where_symlink_leads_now(
+    directory: str,
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that a server serves from where a symlink on the path to its directory
+    leads, after it's changed to lead elsewhere.
+    """
+    for name in ("before", "after"):
+        (tmp_path / name / "site").mkdir(parents=True)
+        (tmp_path / name / "notes.txt").write_text(name)
+        (tmp_path / name / "site" / "notes.txt").write_text(name)
+
+    link = tmp_path / "link"
+    link.symlink_to(tmp_path / "before")
+
+    with Server(
+        tmp_path / directory,
+        port=free_port,
+    ) as server:
+        before = fetch(server.url + "notes.txt").body
+
+        link.unlink()
+        link.symlink_to(tmp_path / "after")
+
+        after = fetch(server.url + "notes.txt").body
+
+    result = (
+        before,
+        after,
+    )
+
+    expect = (
+        b"before",
+        b"after",
     )
 
     assert result == expect

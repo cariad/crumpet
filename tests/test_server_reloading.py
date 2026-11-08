@@ -208,6 +208,62 @@ def test_server_reloads_after_replacing_directory(
     assert result == expect
 
 
+@mark.parametrize(
+    "directory",
+    [
+        # The served directory is the symlink.
+        "link",
+        # A symlink leads to the served directory's parent.
+        "link/site",
+    ],
+)
+def test_server_reloads_after_symlink_leads_elsewhere(
+    directory: str,
+    free_port: int,
+    tmp_path: Path,
+) -> None:
+    """
+    Assert that a watching server reloads open pages when a symlink on the path to its
+    directory is changed to lead elsewhere, then keeps reloading them after changes
+    there.
+    """
+    for name in ("before", "after"):
+        (tmp_path / name / "site").mkdir(parents=True)
+
+    link = tmp_path / "link"
+    link.symlink_to(tmp_path / "before")
+
+    with (
+        Server(
+            tmp_path / directory,
+            port=free_port,
+            watch=True,
+        ) as server,
+        open_page(server.url) as page,
+    ):
+        settle(page)
+
+        link.unlink()
+        link.symlink_to(tmp_path / "after")
+        retargeted = next_event(page)
+        settle(page)
+
+        (tmp_path / directory / "index.html").write_text("Built")
+        changed = next_event(page)
+
+    result = [
+        retargeted,
+        changed,
+    ]
+
+    expect = [
+        b"data: \n",
+        b"data: \n",
+    ]
+
+    assert result == expect
+
+
 # A burst ends when no change comes for 50 milliseconds, and Windows can pause that
 # long between writes, such as to scan each new file. The burst then splits in two,
 # so pages reload twice. That's fine, but it fails the test, so try again.

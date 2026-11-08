@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 import watchfiles
 from notwork import claim_port
-from rootle import ends_like_directory, resolve, status
+from rootle import ends_like_directory, status
 from watchfiles import Change
 
 from ._listener import Listener
@@ -26,6 +26,10 @@ _INTERVAL = 50
 class Server:
     """
     Serves a directory on `localhost`.
+
+    The path to the directory is followed again for every request, so when a symlink on
+    it is changed to lead elsewhere, the directory that it leads to now is served, and
+    watched.
 
     Args:
         directory: Path to the directory to serve.
@@ -121,7 +125,10 @@ class Server:
                 fspath(directory),
             )
 
-        absolute = resolve(directory)
+        # Symlinks are left in, so that one changed to lead elsewhere is followed there.
+        # The path is made absolute, so that changing the working directory doesn't
+        # move it.
+        absolute = Path(directory).absolute()
 
         claimed = claim_port(port)
         reloader = Reloader()
@@ -260,6 +267,9 @@ class Server:
 
         Watches again whenever the directory is replaced, since a watch on Linux and
         Windows ends with the directory that it started on.
+
+        A symlink on the path that's changed to lead elsewhere replaces it too, since
+        every watch ends with the directory that it started on then.
         """
         replaced = False
         watched = _status(self._directory)
