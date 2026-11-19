@@ -696,11 +696,11 @@ wheels = [
 
 [[package]]
 name = "rootle"
-version = "1.2.0"
+version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/18/9e/f5e3d18d82eaf86a04cb52decde6cb59843d36020859427ab3343902bc96/rootle-1.2.0.tar.gz", hash = "sha256:fdace5d4acaa6fcdf62487d569526d16e834f2a518364f8a0d29ccc88c050f9e", size = 63539, upload-time = "2026-11-04T12:17:41.764Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/f3/0b50514fcce8d392510db47bca04828e6f79ebd5aeab44d24d939399aeae/rootle-1.3.0.tar.gz", hash = "sha256:c7ad789671df222d6ac09518d49612860b23ea76be2f6090f3650b30b885a268", size = 73916, upload-time = "2026-11-08T14:26:55.858Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1b/5a/8640015670701c8527b23c6072f147cceaf660fc7a7add3fa39196f4e314/rootle-1.2.0-py3-none-any.whl", hash = "sha256:e1956d8b805cbf04762a868a5c18a9f40379d90e9a2e6dec923a3de3e7a81e1e", size = 20795, upload-time = "2026-11-04T12:17:40.514Z" },
+    { url = "https://files.pythonhosted.org/packages/73/f8/b40c058899bdb71ca104e1ec35e6bdd13b6f02c5479a5967cfeb1a1823d6/rootle-1.3.0-py3-none-any.whl", hash = "sha256:1d55fdafe6e2a32d3f33d28109bc70fa68f5b9baf8b2399a85aef15e0f18d82d", size = 28990, upload-time = "2026-11-08T14:26:54.716Z" },
 ]
 
 [[package]]
