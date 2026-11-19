@@ -491,11 +491,11 @@ wheels = [
 
 [[package]]
 name = "notwork"
-version = "1.1.0"
+version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ed/32/9748969ad11f8fdfade11fe3862e579bb6be2f67116f25aa89593f4e46ac/notwork-1.1.0.tar.gz", hash = "sha256:41a763263a3403af432a70f6e23b007abfccaf0fde6aeea007f106b9dede32f1", size = 53071, upload-time = "2026-11-06T14:25:31.697Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/79/6b/d8446958333ac92fd5e63bc7499d28d8d5c76f939854af84e274f7f86a9f/notwork-1.2.0.tar.gz", hash = "sha256:568e97e9fd3370ac7741bc1dff9d27eb39b143661e5da4d69bbb212943a1972f", size = 53896, upload-time = "2026-11-08T14:02:08.638Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2c/a5/3737c318edba816bbc5e1f4fe389495ad65735489489b96a0a7d19ebd77a/notwork-1.1.0-py3-none-any.whl", hash = "sha256:1ee0f2e9e52ac52f94651b8896369f965d8bef887dfab7214642861ea7d38716", size = 11386, upload-time = "2026-11-06T14:25:30.379Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/aa/de949381dfa95e7d284860c05f6f201af341023cbc8dc13ddb9d3098b564/notwork-1.2.0-py3-none-any.whl", hash = "sha256:09604b5548d7c8dbdb3dd67b48946cb0f0d87961a1e97bf5b8c18d84a5d14c17", size = 12338, upload-time = "2026-11-08T14:02:07.401Z" },
 ]
 
 [[package]]
